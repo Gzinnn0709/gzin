@@ -25,7 +25,8 @@ class Config:
     kick_channel: str = ""
     kick_chatroom_id: int = 0       # opcional: evita consultar a API da Kick (Cloudflare)
     kick_pusher_key: str = ""       # opcional: chave do Pusher do chat da Kick
-    stream_quality: str = "best"
+    stream_quality: str = "auto"    # auto = até record_max_height; ou "best", "720p60", "480p"...
+    record_max_height: int = 720    # grava em 720p: metade da internet e da CPU de 1080p
 
     # Pastas
     data_dir: Path = Path("data")
@@ -36,7 +37,9 @@ class Config:
     live_check_interval: int = 60
 
     # Detecção de momentos
-    threshold: float = 4.0          # score mínimo para abrir um momento
+    threshold: float = 3.0          # score mínimo para abrir um momento (maior = menos cortes)
+    target_clips_per_hour: int = 12 # se ficar muito tempo sem corte, o limiar desce sozinho (0 = desliga)
+    threshold_floor: float = 1.8    # limite mínimo dessa descida
     window_seconds: int = 5         # janela deslizante de análise
     analysis_lag: int = 30          # atraso da análise (espera o áudio do segmento ficar pronto)
     baseline_seconds: int = 300     # memória da média móvel (~5 min)
@@ -60,6 +63,8 @@ class Config:
     burn_subtitles: bool = True
     video_crf: int = 23
     video_preset: str = "veryfast"
+    encode_threads: int = 2         # núcleos usados pelo ffmpeg ao gerar cortes (deixa o PC livre)
+    low_priority: bool = True       # roda com prioridade baixa: o navegador/live vem primeiro
 
     # Transcrição (faster-whisper, opcional)
     whisper_model: str = "auto"     # auto = "small" com GPU NVIDIA, "base" só com CPU; "off" desliga

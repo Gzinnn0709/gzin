@@ -34,7 +34,7 @@ def _has_cuda() -> bool:
 
 
 def transcribe(path: Path, model_size: str = "auto", device: str = "auto",
-               language: str = "pt") -> list[Line]:
+               language: str = "pt", cpu_threads: int = 2) -> list[Line]:
     global _model
     if not available():
         return []
@@ -47,7 +47,8 @@ def transcribe(path: Path, model_size: str = "auto", device: str = "auto",
         compute = "float16" if cuda else "int8"  # int8 deixa a CPU bem mais rápida
         log.info("Carregando Whisper '%s' (%s). Na primeira vez ele baixa o modelo, pode demorar…",
                  model_size, dev)
-        _model = WhisperModel(model_size, device=dev, compute_type=compute)
+        _model = WhisperModel(model_size, device=dev, compute_type=compute,
+                              cpu_threads=max(1, cpu_threads))
     segments, _info = _model.transcribe(str(path), language=language, vad_filter=True,
                                         beam_size=1, word_timestamps=False)
     return [Line(s.start, s.end, s.text.strip()) for s in segments if s.text.strip()]

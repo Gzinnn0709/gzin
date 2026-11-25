@@ -19,8 +19,8 @@ from .platforms import check_live, read_all_chats
 from .config import Config
 from .db import ClipDB
 from .detector import Moment, MomentDetector
-from .recorder import (Recorder, cleanup_buffer, list_segments, segments_for_range,
-                       split_file_to_segments)
+from .recorder import (Recorder, cleanup_buffer, list_segments, pick_variant, segments_for_range,
+                       split_file_to_segments, streamlink_quality)
 from .signals import audio_levels
 
 log = logging.getLogger(__name__)
@@ -102,7 +102,8 @@ class ClipProcessor:
         if cfg.whisper_model.lower() not in ("off", "none", "0", ""):
             tw = time.time()
             lines = _try(lambda: transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device,
-                                                       cfg.whisper_language), "transcrição") or []
+                                                       cfg.whisper_language, cfg.encode_threads),
+                         "transcrição") or []
             if lines:
                 log.info("Corte #%d transcrito em %.0fs", clip_id, time.time() - tw)
         transcript = transcribe.to_text(lines)
@@ -115,7 +116,8 @@ class ClipProcessor:
                                            m.category, peak_offset, m.peak_score), "revisão da IA")
         rv = rv or ai.heuristic_review(duration, m.category, m.stats, m.peak_score)
         status = "pendente"
-        if not rv.keep or rv.score < cfg.ai_min_score:
+        # a nota mínima só vale para a IA; sem ela, todo momento detectado vira corte
+        if rv.by_ai and (not rv.keep or rv.score < cfg.ai_min_score):
             status = "descartado"
             log.info("Corte #%d descartado (nota %d): %s", clip_id, rv.score, rv.reason)
 
@@ -240,8 +242,11 @@ class LiveRunner:
                                 why or "(veja data/ffmpeg.log)")
                 if self.recorder:
                     self.recorder.stop()
+                hls = st.hls_url
+                if hls and self.cfg.stream_quality in ("auto", ""):
+                    hls = await asyncio.to_thread(pick_variant, hls, self.cfg.record_max_height)
                 self.recorder = Recorder(st.page_url, self.cfg.buffer_dir, self.cfg.segment_seconds,
-                                         self.cfg.stream_quality, st.hls_url,
+                                         streamlink_quality(self.cfg), hls,
                                          log_path=self.cfg.data_dir / "ffmpeg.log")
                 self.recorder.start()
                 self.live = True

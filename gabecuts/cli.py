@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from .config import load_config
@@ -42,6 +43,20 @@ def main(argv: list[str] | None = None) -> None:
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
     cfg = load_config(args.config, channel=args.channel, data_dir=args.data_dir,
                       platform=args.platform, chat_sources=args.chat_sources)
+    cfg.ensure_dirs()
+    # log também em arquivo (útil rodando minimizado / em segundo plano)
+    from logging.handlers import RotatingFileHandler
+    fh = RotatingFileHandler(cfg.data_dir / "gabecuts.log", maxBytes=5_000_000, backupCount=2,
+                             encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    logging.getLogger().addHandler(fh)
+    for noisy in ("httpx", "httpcore", "faster_whisper"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    from . import clipper
+    clipper.THREADS = cfg.encode_threads
+    if cfg.low_priority and args.cmd in ("live", "vod"):
+        lower_priority()
 
     if args.cmd == "vod":
         from .pipeline import process_vod
@@ -57,6 +72,25 @@ def main(argv: list[str] | None = None) -> None:
         uvicorn.run(create_app(cfg), host=cfg.web_host, port=cfg.web_port)
     else:
         asyncio.run(_live(cfg, web=not args.no_web))
+
+
+def lower_priority() -> None:
+    """Prioridade baixa para este processo e para os ffmpeg/streamlink que ele abrir.
+
+    O Windows/Linux passam a dar preferência ao navegador: a live não trava e os pontos
+    continuam contando, enquanto os cortes são feitos com a CPU que sobrar.
+    """
+    try:
+        if os.name == "nt":
+            import ctypes
+            BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+            k32 = ctypes.windll.kernel32
+            k32.SetPriorityClass(k32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            os.nice(10)
+        logging.getLogger(__name__).info("Rodando com prioridade baixa (a live no navegador vem primeiro)")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).debug("Não consegui baixar a prioridade: %s", e)
 
 
 async def _live(cfg, web: bool) -> None:

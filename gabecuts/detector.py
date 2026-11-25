@@ -92,6 +92,7 @@ class _Open:
     peak_t: int
     peak_s: float
     last_above: int
+    thr: float = 0.0
     scores: list = field(default_factory=list)
     totals: Counter = field(default_factory=Counter)
 
@@ -106,6 +107,7 @@ class MomentDetector:
         self.first_t: int | None = None
         self.open: _Open | None = None
         self.last_clip_end: float = 0.0
+        self.last_moment_t: float | None = None
         self.recent_scores: deque = deque(maxlen=600)  # (t, score, componentes) para o painel
 
     # --- entrada de dados ------------------------------------------------
@@ -221,24 +223,46 @@ class MomentDetector:
             return [m] if m else []
         return []
 
+    def current_threshold(self, t: float) -> float:
+        """Limiar adaptativo: se passar muito tempo sem corte, fica mais sensível aos poucos.
+
+        Com `target_clips_per_hour = 12`, depois de 5 min sem nenhum momento o limiar começa a
+        descer até `threshold_floor` (em mais 5 min). Assim sempre sai o melhor momento do
+        período, mesmo numa parte mais calma da live. Ao sair um corte, volta ao normal.
+        """
+        c = self.cfg
+        if c.target_clips_per_hour <= 0 or self.first_t is None:
+            return c.threshold
+        interval = 3600.0 / c.target_clips_per_hour
+        ref = self.last_moment_t if self.last_moment_t is not None else self.first_t + c.warmup_seconds
+        idle = t - ref
+        if idle <= interval:
+            return c.threshold
+        frac = min(1.0, (idle - interval) / interval)
+        return c.threshold - (c.threshold - min(c.threshold_floor, c.threshold)) * frac
+
     def _step(self, t: int) -> Moment | None:
         c = self.cfg
         score, comps = self.score_second(t)
+        thr = self.current_threshold(t)
+        comps["thr"] = round(thr, 2)
         self.recent_scores.append((t, round(score, 2), comps))
         warm = self.first_t is not None and t - self.first_t >= c.warmup_seconds
-        above = warm and score >= c.threshold
+        above = warm and score >= thr
 
         result = None
         if self.open is None:
-            if above and t - c.chat_delay - c.pre_roll >= self.last_clip_end - 5:
+            # só não abre um momento cuja reação ainda está dentro do corte anterior
+            if above and t - c.chat_delay >= self.last_clip_end:
                 self.open = _Open(start=t, peak_t=t, peak_s=score, last_above=t)
+                self.open.thr = thr
         if self.open is not None:
             o = self.open
             o.scores.append(score)
             b = self.buckets.get(t)
             if b is not None:
                 o.totals.update(msgs=b.msgs, laughs=b.laughs, hype=b.hype, clip_calls=b.clip_calls)
-            if score >= c.threshold * 0.5:
+            if score >= o.thr * 0.5:
                 o.last_above = t
             if score > o.peak_s:
                 o.peak_s, o.peak_t = score, t
@@ -279,6 +303,7 @@ class MomentDetector:
         else:
             category = "reação"
         self.last_clip_end = clip_end
+        self.last_moment_t = float(end)
         return Moment(event_start=float(o.start), event_end=float(end), peak_time=float(o.peak_t),
                       peak_score=round(o.peak_s, 2), clip_start=float(clip_start),
                       clip_end=float(clip_end), category=category,

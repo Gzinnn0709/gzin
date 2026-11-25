@@ -13,8 +13,16 @@ class ClipError(RuntimeError):
     pass
 
 
+# núcleos que o ffmpeg pode usar ao codificar cortes (definido pela config na inicialização)
+THREADS = 2
+
+
 def _run(cmd: list[str], cwd: Path | None = None) -> None:
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    if "libx264" in cmd and THREADS > 0:
+        i = cmd.index("libx264") + 1
+        cmd = [*cmd[:i], "-threads", str(THREADS), *cmd[i:]]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, encoding="utf-8",
+                       errors="replace")
     if r.returncode != 0:
         raise ClipError(f"ffmpeg falhou: {r.stderr[-1500:]}")
 

@@ -6,11 +6,16 @@ platform = "twitch"              # de onde vem o VÍDEO: "twitch" ou "kick"
 # twitch_channel = ""            # se o nome do canal mudar de uma plataforma para outra
 # kick_channel = ""
 # kick_chatroom_id = 0           # se a API da Kick (Cloudflare) bloquear; veja o README
-stream_quality = "best"          # ou "1080p60", "720p60", "480p"...
+stream_quality = "auto"          # auto = até record_max_height; ou "best", "720p60", "480p"...
+record_max_height = 720          # 720p = metade da internet/CPU de 1080p (não trava a live no navegador)
+low_priority = true              # o navegador vem primeiro
+encode_threads = 2
 data_dir = "data"
 
 # Sensibilidade: maior = menos cortes, só os momentos mais fortes
-threshold = 4.0
+threshold = 3.0
+target_clips_per_hour = 12       # se ficar muito tempo sem corte, fica mais sensível sozinho (0 = desliga)
+threshold_floor = 1.8
 chat_delay = 4.0                 # segundos entre o acontecimento e a reação do chat
 pre_roll = 20.0                  # contexto antes do momento
 post_roll = 8.0

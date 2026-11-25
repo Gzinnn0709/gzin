@@ -164,6 +164,59 @@ class Recorder:
         log.info("Gravação parada")
 
 
+def streamlink_quality(cfg) -> str:
+    """Qualidade para o streamlink: limita a resolução para não brigar com a live no navegador."""
+    if cfg.stream_quality not in ("auto", ""):
+        return cfg.stream_quality
+    h = cfg.record_max_height
+    opts = [q for q in ("1080p60", "1080p", "936p60", "720p60", "720p", "480p60", "480p", "360p")
+            if int(q.split("p")[0]) <= h]
+    return ",".join(opts + ["best"])
+
+
+_STREAM_INF = re.compile(r"#EXT-X-STREAM-INF:(.*)")
+_RES = re.compile(r"RESOLUTION=(\d+)x(\d+)")
+_BW = re.compile(r"[^-]BANDWIDTH=(\d+)")
+
+
+def pick_variant(master_url: str, max_height: int = 720, text: str | None = None) -> str:
+    """Escolhe, numa playlist HLS mestre, a melhor qualidade com altura <= max_height."""
+    from urllib.parse import urljoin
+    if text is None:
+        try:
+            import httpx
+            from .kick import BROWSER_UA
+            r = httpx.get(master_url, timeout=10, headers={"User-Agent": BROWSER_UA,
+                                                            "Referer": "https://kick.com/"})
+            r.raise_for_status()
+            text = r.text
+        except Exception as e:  # noqa: BLE001
+            log.debug("Não li a playlist mestre (%s); usando a padrão", e)
+            return master_url
+    lines = [ln.strip() for ln in text.splitlines()]
+    variants = []
+    for i, ln in enumerate(lines):
+        m = _STREAM_INF.match(ln)
+        if not m or i + 1 >= len(lines):
+            continue
+        uri = next((u for u in lines[i + 1:] if u and not u.startswith("#")), None)
+        if not uri:
+            continue
+        res = _RES.search(m.group(1))
+        bw = _BW.search(" " + m.group(1))
+        full = urljoin(master_url, uri)
+        # variantes relativas podem precisar do token da playlist mestre
+        if "?" not in uri and "?" in master_url and not uri.startswith("http"):
+            full += "?" + master_url.split("?", 1)[1]
+        variants.append((int(res.group(2)) if res else 0, int(bw.group(1)) if bw else 0, full))
+    if not variants:
+        return master_url
+    ok = [v for v in variants if 0 < v[0] <= max_height] or [min(variants)]
+    chosen = max(ok, key=lambda v: (v[0], v[1]))
+    log.info("Gravando em %sp (limite %sp) para não pesar na live", chosen[0] or "?", max_height)
+    return chosen[2]
+
+
 def list_segments(buffer_dir: Path, default_duration: float = 10.0,
                   include_last: bool = False) -> list[Segment]:
     """Lista os segmentos em ordem. O último (ainda sendo escrito) é omitido por padrão.

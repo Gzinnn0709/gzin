@@ -53,6 +53,23 @@ cp gabecuts.example.toml gabecuts.toml
 ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build
 ```
 
+## Windows: rodar em segundo plano (com dois cliques)
+
+Depois de instalado, abra a pasta do projeto no Explorer e clique duas vezes no arquivo:
+
+| arquivo | o que faz |
+|---|---|
+| `iniciar_cortes.bat` | inicia o GabeCuts **minimizado e com prioridade baixa**. Você pode deixar a live aberta no navegador (ganhando pontos) que ela não trava. |
+| `parar_cortes.bat` | para tudo |
+| `atualizar.bat` | baixa a versão mais nova e atualiza as dependências |
+
+A plataforma (Kick ou Twitch) fica na linha `set PLATAFORMA=kick` do `iniciar_cortes.bat`. O log fica em `data\gabecuts.log`.
+
+Para não pesar na live aberta no navegador:
+- **Gravação em 720p** (`record_max_height`). Usa metade da internet e da CPU de 1080p.
+- **Prioridade baixa** (`low_priority`). O Windows dá preferência ao navegador.
+- **Cortes codificados com 2 núcleos** (`encode_threads`).
+
 ## Uso
 
 ```bash
@@ -102,8 +119,10 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 
 As opções estão em `gabecuts.example.toml`, e cada uma também pode ser definida por variável de ambiente (`GABECUTS_THRESHOLD=5`).
 
-- **Cortes demais?** Aumente `threshold` (ex.: 5–6) ou `ai_min_score`.
-- **Cortes de menos?** Diminua `threshold` (ex.: 3).
+- **Frequência automática.** `target_clips_per_hour` (padrão 12). Se a live fica calma e passa muito tempo sem corte, o limiar desce sozinho até `threshold_floor` e pega o melhor momento do período. Quando sai um corte, ele volta ao normal.
+- **Cortes demais?** Aumente `threshold` (ex.: 4–5), diminua `target_clips_per_hour` ou aumente `ai_min_score`.
+- **Cortes de menos?** Diminua `threshold` (ex.: 2.5) ou aumente `target_clips_per_hour` (ex.: 20).
+- **Corte manual.** O botão **✂️ Cortar agora** no painel corta os últimos 45 segundos.
 - **O corte começa tarde ou cedo demais?** Ajuste `chat_delay` e `pre_roll`.
 - **Live com muito barulho de jogo?** Diminua `w_audio`.
 

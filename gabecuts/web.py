@@ -66,9 +66,10 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
         if not runner:
             return {"mode": "painel", "channel": cfg.channel}
         recent = list(runner.detector.recent_scores)[-120:]
+        thr = recent[-1][2].get("thr", cfg.threshold) if recent else cfg.threshold
         return {"mode": "ao vivo", "channel": cfg.channel, "live": runner.live,
                 "recording": bool(runner.recorder and runner.recorder.running()),
-                "queue": runner.queue.qsize(), "threshold": cfg.threshold, **runner.stats,
+                "queue": runner.queue.qsize(), "threshold": thr, **runner.stats,
                 "scores": [[t, s] for t, s, _ in recent]}
 
     @app.get("/", response_class=HTMLResponse)
@@ -113,7 +114,8 @@ select{background:#2a2a2d;color:var(--fg);border:0;border-radius:6px;padding:6px
 const $=s=>document.querySelector(s);
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function load(){
-  const f=$('#f').value; const r=await fetch('/api/clips'+(f?'?status='+f:'')); const cs=await r.json();
+  const f=$('#f').value; const r=await fetch('/api/clips'+(f?'?status='+f:'')); const txt=await r.text();
+  if(txt===window._last)return; window._last=txt; const cs=JSON.parse(txt);
   $('#list').innerHTML=cs.map(c=>{const busy=c.status==='na fila'||c.status==='processando';const f=c.file_v||c.file_h;
    const media=f?`<video controls preload="none" poster="/media/${c.thumb||''}" src="/media/${f}"></video>`:
      `<div class="wait">${c.status==='erro'?'❌ erro':'⏳ '+esc(c.description)}</div>`;
@@ -146,6 +148,6 @@ async function status(){
 }
 $('#now').onclick=async()=>{const b=$('#now');b.disabled=true;const r=await fetch('/api/clip-now',{method:'POST'});
  const j=await r.json();b.disabled=false;if(!r.ok){alert(j.detail||'erro');return}load()};
-let tick=0;$('#f').onchange=load;load();status();setInterval(status,3000);
+let tick=0;$('#f').onchange=()=>{window._last=null;load()};load();status();setInterval(status,3000);
 setInterval(()=>{tick++;if(window._busy||tick%5===0)load()},4000);
 </script></body></html>"""
