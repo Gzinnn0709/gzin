@@ -15,6 +15,11 @@ class StatusIn(BaseModel):
     status: str
 
 
+class SiteIn(BaseModel):
+    url: str = ""
+    codigo: str
+
+
 class EditIn(BaseModel):
     title: str | None = None
     description: str | None = None
@@ -61,6 +66,28 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
             raise HTTPException(409, "a live não está sendo gravada agora")
         return {"id": runner.clip_now(max(10.0, min(seconds, 120.0)))}
 
+    @app.get("/api/site")
+    def site_status():
+        from . import site
+        if runner:
+            return runner.site.status()
+        c = site.carregar(cfg)
+        return {"url": c["url"], "conectado": bool(c.get("codigo")), "erro": "", "pendentes": None}
+
+    @app.post("/api/site")
+    def site_conectar(body: SiteIn):
+        from . import site
+        url = site.normalizar_url(body.url)
+        codigo = body.codigo.strip()
+        if not codigo:
+            site.salvar(cfg, url, "")
+            return {"ok": True, "mensagem": "desconectado"}
+        ok, msg = site.conferir(url, codigo)
+        if not ok:
+            raise HTTPException(400, msg)
+        site.salvar(cfg, url, codigo)
+        return {"ok": True, "mensagem": "Conectado! Os cortes prontos vão aparecer na aba Cortes do site."}
+
     @app.get("/api/status")
     def status():
         if not runner:
@@ -101,13 +128,24 @@ button,a.btn{border:0;border-radius:6px;padding:6px 10px;cursor:pointer;backgrou
 .ap{background:var(--ok);color:#000}.wait{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:#000;color:var(--mut);text-align:center;padding:12px}
 .err{color:#ff6b6b;font-size:13px;word-break:break-word}.rj{background:var(--bad);color:#fff}
 select{background:#2a2a2d;color:var(--fg);border:0;border-radius:6px;padding:6px}
+dialog{background:var(--card);color:var(--fg);border:1px solid #333;border-radius:12px;max-width:min(92vw,460px)}
+dialog::backdrop{background:#000a}dialog input{background:#0e0e10;color:var(--fg);border:1px solid #444;border-radius:6px;padding:8px;font-size:14px}
 #graph{padding:0 20px}
 </style></head><body>
 <header><h1>✂️ GabeCuts</h1><span class="pill">{{CHANNEL}}</span><span id="st" class="pill">…</span>
 <select id="f"><option value="">todos</option><option>pendente</option><option>aprovado</option>
 <option>postado</option><option>rejeitado</option><option>descartado</option><option>processando</option>
 <option>na fila</option><option>erro</option></select>
-<button class="ap" id="now" title="Corta os últimos 45 segundos da live">✂️ Cortar agora</button></header>
+<button class="ap" id="now" title="Corta os últimos 45 segundos da live">✂️ Cortar agora</button>
+<button id="sitebtn" title="Enviar os cortes para a aba Cortes do site">🌐 Site</button><span id="sitest" class="pill"></span></header>
+<dialog id="sitedlg"><form method="dialog" id="siteform">
+<h3 style="margin-top:0">🌐 Enviar cortes para o site</h3>
+<p class="meta">No site, entre com sua conta de admin → <b>Administração → ✂️ Cortes → 🔗 Conectar GabeCuts</b>. Copie o código e cole aqui.</p>
+<label class="meta">Endereço do site<br><input id="siteurl" style="width:100%"></label><br><br>
+<label class="meta">Código<br><input id="sitecod" placeholder="gc_..." style="width:100%" autocomplete="off"></label>
+<p id="sitemsg" class="meta"></p>
+<div class="btns"><button class="ap" id="sitesave" type="button">Conectar</button><button value="cancel">Fechar</button></div>
+</form></dialog>
 <div id="graph"><canvas id="cv" width="1200" height="70"></canvas></div>
 <main id="list"></main>
 <script>
@@ -121,7 +159,7 @@ async function load(){
      `<div class="wait">${c.status==='erro'?'❌ erro':'⏳ '+esc(c.description)}</div>`;
    return `<div class="card" id="clip-${c.id}">${media}
    <div class="body"><div class="title">#${c.id} · ${esc(c.title)}</div>
-   <div class="meta">${new Date(c.created_at*1000).toLocaleString('pt-BR')} · ${esc(c.category)} · nota ${c.ai_score??'-'} · ${(c.t_end-c.t_start).toFixed(0)}s · <b>${c.status}</b>${c.by_ai?' · 🤖':''}</div>
+   <div class="meta">${new Date(c.created_at*1000).toLocaleString('pt-BR')} · ${esc(c.category)} · nota ${c.ai_score??'-'} · ${(c.t_end-c.t_start).toFixed(0)}s · <b>${c.status}</b>${c.by_ai?' · 🤖':''}${c.enviado?' · ☁️ no site':''}</div>
    <div class="meta">${busy?'':esc(c.description)}</div>
    ${c.status==='erro'?`<div class="err">${esc(c.reason)}</div>`:''}
    <div class="tags">${(c.hashtags||[]).map(h=>'#'+esc(h)).join(' ')}</div>
@@ -148,6 +186,15 @@ async function status(){
 }
 $('#now').onclick=async()=>{const b=$('#now');b.disabled=true;const r=await fetch('/api/clip-now',{method:'POST'});
  const j=await r.json();b.disabled=false;if(!r.ok){alert(j.detail||'erro');return}load()};
+async function site(){try{const s=await (await fetch('/api/site')).json();window._site=s;
+  $('#sitest').textContent=s.conectado?(s.erro?'🌐 erro no envio':'🌐 conectado'+(s.pendentes?` · enviando ${s.pendentes}`:'')):'🌐 site desligado';
+  $('#sitest').title=s.erro||s.url;}catch(e){}}
+$('#sitebtn').onclick=()=>{const s=window._site||{};$('#siteurl').value=s.url||'https://www.aamcell.com.br';$('#sitecod').value='';
+  $('#sitemsg').textContent=s.conectado?('Já conectado. '+(s.erro?'Último erro: '+s.erro:'')):'';$('#sitedlg').showModal()};
+$('#sitesave').onclick=async()=>{const b=$('#sitesave');b.disabled=true;$('#sitemsg').textContent='Conferindo o código…';
+  const r=await fetch('/api/site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('#siteurl').value,codigo:$('#sitecod').value})});
+  const j=await r.json();b.disabled=false;$('#sitemsg').textContent=r.ok?'✅ '+j.mensagem:'❌ '+(j.detail||'erro');site()};
+site();setInterval(site,15000);
 let tick=0;$('#f').onchange=()=>{window._last=null;load()};load();status();setInterval(status,3000);
 setInterval(()=>{tick++;if(window._busy||tick%5===0)load()},4000);
 </script></body></html>"""

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from . import ai, clipper, transcribe
+from . import ai, clipper, site, transcribe
 from .chat import ChatMessage
 from .platforms import check_live, read_all_chats
 from .config import Config
@@ -192,6 +192,7 @@ class LiveRunner:
         self.db = ClipDB(cfg.db_path)
         self.detector = MomentDetector(cfg)
         self.processor = ClipProcessor(cfg, self.db)
+        self.site = site.SiteUploader(cfg, self.db)
         self.recorder: Recorder | None = None
         self.live = False
         self.analyzed: set[str] = set()
@@ -218,7 +219,16 @@ class LiveRunner:
 
     async def run(self) -> None:
         await asyncio.gather(self._chat_loop(), self._live_loop(), self._segment_loop(),
-                             self._detect_loop(), self._clip_worker())
+                             self._detect_loop(), self._clip_worker(), self._site_loop())
+
+    async def _site_loop(self) -> None:
+        """Manda os cortes prontos para a aba Cortes do site (se estiver conectado)."""
+        while True:
+            try:
+                await asyncio.to_thread(self.site.sync)
+            except Exception:  # noqa: BLE001
+                log.exception("Erro no envio para o site")
+            await asyncio.sleep(20)
 
     async def _chat_loop(self) -> None:
         async for msg in read_all_chats(self.cfg):
@@ -378,4 +388,8 @@ def process_vod(cfg: Config, video: Path, chat_file: Path | None = None,
         if cid and (proc.db.get(cid) or {}).get("status") != "erro":
             ids.append(cid)
     shutil.rmtree(work, ignore_errors=True)
+    if ids and site.carregar(cfg).get("codigo"):
+        up = site.SiteUploader(cfg, proc.db)
+        while up.sync():
+            pass
     return ids

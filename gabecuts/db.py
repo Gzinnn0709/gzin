@@ -44,6 +44,10 @@ class ClipDB:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(clips)")}
+            if "enviado" not in cols:  # bancos criados antes do envio para o site
+                self._conn.execute("ALTER TABLE clips ADD COLUMN enviado INTEGER DEFAULT 0")
+                self._conn.commit()
 
     def insert(self, **fields) -> int:
         fields.setdefault("created_at", time.time())

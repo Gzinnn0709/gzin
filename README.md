@@ -103,6 +103,16 @@ Para a Kick, o chat pode ser uma lista JSON de mensagens no formato da Kick (`cr
 
 O chat também pode ser um JSONL simples, com uma linha por mensagem: `{"t": 123.4, "user": "fulano", "text": "KKKK"}`. Sem chat, a detecção usa só o áudio e fica menos precisa.
 
+### Ver os cortes no site (aba escondida, só para o admin)
+
+Os cortes prontos podem ir sozinhos para a aba **Administração → ✂️ Cortes** do site da loja.
+Lá você assiste, baixa e copia a legenda de qualquer lugar, inclusive pelo celular.
+
+1. No site, entre com a conta de admin e vá em **Administração → ✂️ Cortes → 🔗 Conectar GabeCuts**. O código já sai copiado.
+2. No painel do GabeCuts (http://localhost:8000), clique em **🌐 Site**, cole o código e clique em **Conectar**.
+
+A partir daí, cada corte pronto (exceto os descartados) é enviado em segundo plano. O código fica em `data/site.json`, que não vai para o git.
+
 ### Saída
 
 Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
