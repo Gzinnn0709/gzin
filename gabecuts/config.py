@@ -64,6 +64,7 @@ class Config:
     video_crf: int = 23
     video_preset: str = "veryfast"
     encode_threads: int = 2         # núcleos usados pelo ffmpeg ao gerar cortes (deixa o PC livre)
+    open_live_in_browser: bool = True  # abre a live no navegador quando ela começa (pontos do canal)
     low_priority: bool = True       # roda com prioridade baixa: o navegador/live vem primeiro
 
     # Transcrição (faster-whisper, opcional)

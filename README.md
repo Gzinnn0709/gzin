@@ -53,15 +53,26 @@ cp gabecuts.example.toml gabecuts.toml
 ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build
 ```
 
-## Windows: rodar em segundo plano (com dois cliques)
+## Windows: 100% automático
 
-Depois de instalado, abra a pasta do projeto no Explorer e clique duas vezes no arquivo:
+Rode **uma vez** o **`ligar_inicio_automatico.bat`** (clique duas vezes no Explorer). A partir daí:
+
+1. **Quando o Windows inicia, o GabeCuts liga sozinho,** minimizado e com prioridade baixa. Antes, ele baixa a versão nova, se houver.
+2. **Fica esperando a live.** Quando ela começa:
+   - abre a live no navegador, para ganhar os pontos do canal;
+   - começa a gravar e cortar;
+   - impede o notebook de suspender enquanto grava.
+3. **Cada corte pronto vai sozinho para a página `/cortes` do site**, se estiver conectado.
 
 | arquivo | o que faz |
 |---|---|
-| `iniciar_cortes.bat` | **um clique faz as duas coisas**: abre a live no navegador (para ganhar pontos) e liga os cortes minimizados, com prioridade baixa. |
-| `parar_cortes.bat` | para tudo |
-| `atualizar.bat` | baixa a versão mais nova e atualiza as dependências |
+| `ligar_inicio_automatico.bat` | liga o início automático (só uma vez) e já liga o GabeCuts agora |
+| `desligar_inicio_automatico.bat` | desfaz o início automático |
+| `iniciar_cortes.bat` | liga na mão (minimizado) |
+| `parar_cortes.bat` | para tudo agora |
+| `atualizar.bat` | atualiza na mão. O início automático já atualiza sozinho. |
+
+Para não abrir a live no navegador sozinho, coloque `open_live_in_browser = false` no `gabecuts.toml`.
 
 A plataforma (Kick ou Twitch) fica na linha `set PLATAFORMA=kick` do `iniciar_cortes.bat`. O log fica em `data\gabecuts.log`.
 

@@ -46,6 +46,8 @@ def test_live_simulation_produces_clips(tmp_path, monkeypatch):
             await asyncio.sleep(0.25)
 
     monkeypatch.setattr(pipeline, "read_all_chats", fake_chat)
+    abertas = []
+    monkeypatch.setattr(pipeline, "abrir_no_navegador", abertas.append)
     cfg = Config(data_dir=tmp_path / "data", segment_seconds=5, warmup_seconds=15, analysis_lag=12,
                  baseline_seconds=60, ai_enabled=False, ai_min_score=0, whisper_model="off",
                  video_preset="ultrafast", live_check_interval=1)
@@ -67,6 +69,8 @@ def test_live_simulation_produces_clips(tmp_path, monkeypatch):
         return manual_id
 
     manual_id = asyncio.run(main())
+    # a live foi aberta no navegador uma vez só (na hora em que começou)
+    assert abertas == ["https://kick.com/teste"]
     clips = {c["id"]: c for c in runner.db.list()}
     assert manual_id in clips
     for c in clips.values():

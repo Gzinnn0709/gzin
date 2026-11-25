@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import time
 from collections import deque
@@ -24,6 +25,29 @@ from .recorder import (Recorder, cleanup_buffer, list_segments, pick_variant, se
 from .signals import audio_levels
 
 log = logging.getLogger(__name__)
+
+
+def abrir_no_navegador(url: str) -> None:
+    """Abre a live no navegador padrão (para ganhar os pontos/recompensas do canal)."""
+    try:
+        import webbrowser
+        webbrowser.open(url, new=2)
+        log.info("🌐 Abri a live no navegador: %s", url)
+    except Exception as e:  # noqa: BLE001
+        log.debug("Não abri o navegador: %s", e)
+
+
+def manter_acordado(ligar: bool) -> None:
+    """No Windows, impede o notebook de suspender sozinho enquanto a live está sendo gravada."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if ligar else 0))
+    except Exception as e:  # noqa: BLE001
+        log.debug("Não consegui mudar a suspensão: %s", e)
 
 
 def _try(fn, what: str):
@@ -262,6 +286,9 @@ class LiveRunner:
                     log.info("🔴 %s está AO VIVO (%s)", self.cfg.channel_for(self.cfg.platform),
                              self.cfg.platform)
                     self.detector = MomentDetector(self.cfg)  # baseline nova a cada live
+                    manter_acordado(True)
+                    if self.cfg.open_live_in_browser:
+                        abrir_no_navegador(st.page_url)
                 else:
                     why = self.recorder.exit_info() if self.recorder else ""
                     log.warning("Gravação caiu durante a live; reiniciando. Motivo: %s",
@@ -283,6 +310,7 @@ class LiveRunner:
                 if self.recorder:
                     self.recorder.stop()
                 self.live = False
+                manter_acordado(False)
             await asyncio.sleep(self.cfg.live_check_interval if not self.live else 15)
 
     async def _segment_loop(self) -> None:
