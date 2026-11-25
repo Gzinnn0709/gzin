@@ -29,45 +29,51 @@ class Segment:
         return self.start + self.duration
 
 
-def is_live(channel: str) -> bool:
-    """Verifica se o canal está ao vivo usando a API do streamlink (sem token da Twitch)."""
-    try:
-        import streamlink
-        session = streamlink.Streamlink()
-        session.set_option("twitch-disable-ads", True)
-        return bool(session.streams(f"https://twitch.tv/{channel}"))
-    except Exception as e:  # noqa: BLE001
-        log.debug("Falha ao checar live: %s", e)
-        return False
-
-
 class Recorder:
-    def __init__(self, channel: str, buffer_dir: Path, segment_seconds: int = 10,
-                 quality: str = "best"):
-        self.channel = channel
+    """Grava a live em segmentos.
+
+    * Com `hls_url` (Kick, quando a API responde): o ffmpeg lê o .m3u8 direto.
+    * Sem ela: streamlink -> ffmpeg (Twitch, ou Kick via plugin do streamlink).
+    """
+
+    def __init__(self, page_url: str, buffer_dir: Path, segment_seconds: int = 10,
+                 quality: str = "best", hls_url: str | None = None):
+        self.page_url = page_url
+        self.hls_url = hls_url
         self.buffer_dir = buffer_dir
         self.segment_seconds = segment_seconds
         self.quality = quality
         self._sl: subprocess.Popen | None = None
         self._ff: subprocess.Popen | None = None
 
+    def _segment_args(self) -> list[str]:
+        return ["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-f", "segment",
+                "-segment_time", str(self.segment_seconds), "-reset_timestamps", "1",
+                "-strftime", "1", str(self.buffer_dir / "seg_%s.ts")]
+
     def start(self) -> None:
         self.buffer_dir.mkdir(parents=True, exist_ok=True)
+        if self.hls_url:
+            from .kick import BROWSER_UA
+            self._ff = subprocess.Popen(
+                ["ffmpeg", "-v", "error", "-user_agent", BROWSER_UA,
+                 "-headers", "Referer: https://kick.com/\r\nOrigin: https://kick.com\r\n",
+                 "-i", self.hls_url, *self._segment_args()], stderr=subprocess.DEVNULL)
+            log.info("Gravação iniciada (HLS direto): %s", self.page_url)
+            return
+        extra = (["--twitch-disable-ads", "--twitch-low-latency"] if "twitch.tv" in self.page_url else [])
         self._sl = subprocess.Popen(
-            ["streamlink", "--stdout", "--twitch-disable-ads", "--twitch-low-latency",
-             "--hls-live-edge", "2", f"https://twitch.tv/{self.channel}", self.quality],
+            ["streamlink", "--stdout", *extra, "--hls-live-edge", "2", self.page_url, self.quality],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        self._ff = subprocess.Popen(
-            ["ffmpeg", "-v", "error", "-i", "pipe:0", "-map", "0:v:0?", "-map", "0:a:0?",
-             "-c", "copy", "-f", "segment", "-segment_time", str(self.segment_seconds),
-             "-reset_timestamps", "1", "-strftime", "1",
-             str(self.buffer_dir / "seg_%s.ts")],
-            stdin=self._sl.stdout, stderr=subprocess.DEVNULL)
+        self._ff = subprocess.Popen(["ffmpeg", "-v", "error", "-i", "pipe:0", *self._segment_args()],
+                                    stdin=self._sl.stdout, stderr=subprocess.DEVNULL)
         self._sl.stdout.close()  # o ffmpeg é o único leitor
-        log.info("Gravação iniciada: twitch.tv/%s (%s)", self.channel, self.quality)
+        log.info("Gravação iniciada: %s (%s)", self.page_url, self.quality)
 
     def running(self) -> bool:
-        return bool(self._ff and self._ff.poll() is None and self._sl and self._sl.poll() is None)
+        ff_ok = self._ff is not None and self._ff.poll() is None
+        sl_ok = self._sl is None or self._sl.poll() is None
+        return ff_ok and sl_ok
 
     def stop(self) -> None:
         for p in (self._sl, self._ff):

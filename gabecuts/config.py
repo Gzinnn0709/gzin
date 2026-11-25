@@ -11,10 +11,20 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 
+PLATFORMS = ("twitch", "kick")
+
+
 @dataclass
 class Config:
-    # Canal da Twitch
+    # Canal e plataforma
     channel: str = "gabepeixe"
+    platform: str = "twitch"        # de onde vem o VÍDEO: "twitch" ou "kick"
+    chat_sources: str = ""          # chats lidos, separados por vírgula (padrão: a plataforma).
+                                    # Em multistream use "twitch,kick" para somar os dois chats.
+    twitch_channel: str = ""        # se o nome do canal for diferente em cada plataforma
+    kick_channel: str = ""
+    kick_chatroom_id: int = 0       # opcional: evita consultar a API da Kick (Cloudflare)
+    kick_pusher_key: str = ""       # opcional: chave do Pusher do chat da Kick
     stream_quality: str = "best"
 
     # Pastas
@@ -74,6 +84,15 @@ class Config:
         from dataclasses import replace as _r
         return _r(self, **changes)
 
+    def channel_for(self, platform: str) -> str:
+        override = {"twitch": self.twitch_channel, "kick": self.kick_channel}.get(platform, "")
+        return (override or self.channel).lower().lstrip("#@")
+
+    @property
+    def chats(self) -> list[str]:
+        items = [c.strip().lower() for c in (self.chat_sources or self.platform).split(",")]
+        return [c for c in dict.fromkeys(items) if c]
+
     # Caminhos derivados
     @property
     def buffer_dir(self) -> Path:
@@ -121,5 +140,9 @@ def load_config(path: str | Path | None = None, **overrides) -> Config:
     for k, v in overrides.items():
         if v is not None:
             setattr(cfg, k, v)
-    cfg.channel = cfg.channel.lower().lstrip("#")
+    cfg.channel = cfg.channel.lower().lstrip("#@")
+    cfg.platform = cfg.platform.lower()
+    for p_ in [cfg.platform, *cfg.chats]:
+        if p_ not in PLATFORMS:
+            raise ValueError(f"plataforma desconhecida: {p_!r} (use {', '.join(PLATFORMS)})")
     return cfg

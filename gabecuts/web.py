@@ -64,7 +64,8 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return PAGE.replace("{{CHANNEL}}", cfg.channel)
+        label = " + ".join(cfg.chats) if len(cfg.chats) > 1 else cfg.platform
+        return PAGE.replace("{{CHANNEL}}", f"{cfg.channel_for(cfg.platform)} · {label}")
 
     return app
 
@@ -91,7 +92,7 @@ button,a.btn{border:0;border-radius:6px;padding:6px 10px;cursor:pointer;backgrou
 select{background:#2a2a2d;color:var(--fg);border:0;border-radius:6px;padding:6px}
 #graph{padding:0 20px}
 </style></head><body>
-<header><h1>✂️ GabeCuts</h1><span class="pill">#{{CHANNEL}}</span><span id="st" class="pill">…</span>
+<header><h1>✂️ GabeCuts</h1><span class="pill">{{CHANNEL}}</span><span id="st" class="pill">…</span>
 <select id="f"><option value="">todos</option><option>pendente</option><option>aprovado</option>
 <option>postado</option><option>rejeitado</option><option>descartado</option></select></header>
 <div id="graph"><canvas id="cv" width="1200" height="70"></canvas></div>

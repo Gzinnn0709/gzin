@@ -18,7 +18,9 @@ from .config import load_config
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="gabecuts", description="Cortes automáticos da live do Gabepeixe")
     ap.add_argument("--config", help="arquivo TOML (padrão: gabecuts.toml)")
-    ap.add_argument("--channel", help="canal da Twitch (padrão: gabepeixe)")
+    ap.add_argument("--channel", help="canal (padrão: gabepeixe)")
+    ap.add_argument("--platform", choices=["twitch", "kick"], help="de onde vem o vídeo (padrão: twitch)")
+    ap.add_argument("--chat-sources", help='chats lidos, ex: "twitch,kick" em multistream')
     ap.add_argument("--data-dir", type=Path)
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -28,18 +30,26 @@ def main(argv: list[str] | None = None) -> None:
 
     p_vod = sub.add_parser("vod", help="processa um vídeo local")
     p_vod.add_argument("video", type=Path)
-    p_vod.add_argument("--chat", type=Path, help="chat exportado (TwitchDownloader JSON ou JSONL)")
+    p_vod.add_argument("--chat", type=Path, help="chat exportado (TwitchDownloader JSON, Kick JSON ou JSONL)")
+
+    p_vod.add_argument("--vod-start", help="início do vídeo (ISO, ex: 2026-11-25T20:00:00-03:00); "
+                       "alinha chats da Kick que usam horário absoluto")
 
     sub.add_parser("web", help="apenas o painel web")
 
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    cfg = load_config(args.config, channel=args.channel, data_dir=args.data_dir)
+    cfg = load_config(args.config, channel=args.channel, data_dir=args.data_dir,
+                      platform=args.platform, chat_sources=args.chat_sources)
 
     if args.cmd == "vod":
         from .pipeline import process_vod
-        ids = process_vod(cfg, args.video, args.chat)
+        start = None
+        if args.vod_start:
+            from datetime import datetime
+            start = datetime.fromisoformat(args.vod_start.replace("Z", "+00:00")).timestamp()
+        ids = process_vod(cfg, args.video, args.chat, start)
         print(f"{len(ids)} cortes gerados em {cfg.clips_dir}")
     elif args.cmd == "web":
         import uvicorn

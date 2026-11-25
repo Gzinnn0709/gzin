@@ -13,7 +13,7 @@ import numpy as np
 # Risada em PT-BR + emotes de risada comuns na Twitch/7TV/BTTV
 LAUGH_RE = re.compile(
     r"(k{3,}|(?:ha){2,}|(?:he){3,}|(?:rs){2,}|kekw|lulw?|omegalul|icant|pepelaugh|"
-    r"lmao|xd+\b|😂|🤣|💀|aushau|ashuash|auhsu|kakaka)",
+    r"lmao|xd+\b|😂|🤣|💀|aushau|ashuash|auhsu|kakaka|kekleo|emoji(?:laugh\w*|lol|rofl|joy))",
     re.IGNORECASE,
 )
 # Hype / choque / tensão

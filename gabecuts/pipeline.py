@@ -14,11 +14,12 @@ from pathlib import Path
 import httpx
 
 from . import ai, clipper, transcribe
-from .chat import ChatMessage, read_chat
+from .chat import ChatMessage
+from .platforms import check_live, read_all_chats
 from .config import Config
 from .db import ClipDB
 from .detector import Moment, MomentDetector
-from .recorder import (Recorder, cleanup_buffer, is_live, list_segments, segments_for_range,
+from .recorder import (Recorder, cleanup_buffer, list_segments, segments_for_range,
                        split_file_to_segments)
 from .signals import audio_levels
 
@@ -105,7 +106,7 @@ class ClipProcessor:
 
         rel = lambda p: str(p.relative_to(cfg.clips_dir)) if p else None  # noqa: E731
         clip_id = self.db.insert(
-            channel=cfg.channel, t_start=t0 + rv.trim_start, t_end=t0 + rv.trim_end,
+            channel=f"{cfg.platform}:{cfg.channel_for(cfg.platform)}", t_start=t0 + rv.trim_start, t_end=t0 + rv.trim_end,
             peak_score=m.peak_score, ai_score=rv.score, category=rv.category, title=rv.title,
             description=rv.description, hashtags=rv.hashtags, reason=rv.reason, by_ai=int(rv.by_ai),
             status=status, file_h=rel(final), file_v=rel(vertical), thumb=rel(thumb),
@@ -149,7 +150,7 @@ class LiveRunner:
                              self._detect_loop(), self._clip_worker())
 
     async def _chat_loop(self) -> None:
-        async for msg in read_chat(self.cfg.channel):
+        async for msg in read_all_chats(self.cfg):
             self.stats["messages"] += 1
             if self.live:  # só pontua enquanto há vídeo sendo gravado
                 self.detector.add_message(msg)
@@ -157,15 +158,19 @@ class LiveRunner:
 
     async def _live_loop(self) -> None:
         while True:
-            live = await asyncio.to_thread(is_live, self.cfg.channel)
+            st = await asyncio.to_thread(check_live, self.cfg)
+            live = st.live
             if live and not (self.recorder and self.recorder.running()):
                 if not self.live:
-                    log.info("🔴 %s está AO VIVO", self.cfg.channel)
+                    log.info("🔴 %s está AO VIVO (%s)", self.cfg.channel_for(self.cfg.platform),
+                             self.cfg.platform)
                     self.detector = MomentDetector(self.cfg)  # baseline nova a cada live
                 else:
                     log.warning("Gravação caiu durante a live; reiniciando")
-                self.recorder = Recorder(self.cfg.channel, self.cfg.buffer_dir,
-                                         self.cfg.segment_seconds, self.cfg.stream_quality)
+                if self.recorder:
+                    self.recorder.stop()
+                self.recorder = Recorder(st.page_url, self.cfg.buffer_dir, self.cfg.segment_seconds,
+                                         self.cfg.stream_quality, st.hls_url)
                 self.recorder.start()
                 self.live = True
             elif not live and self.live:
@@ -217,8 +222,16 @@ class LiveRunner:
 # Modo VOD: processa um vídeo já gravado + chat exportado
 # ---------------------------------------------------------------------------
 
-def load_chat_file(path: Path, base_epoch: float) -> list[ChatMessage]:
-    """Aceita JSON do TwitchDownloader ({"comments":[...]}) ou JSONL {"t": seg, "user":..., "text":...}."""
+def load_chat_file(path: Path, base_epoch: float, vod_start: float | None = None) -> list[ChatMessage]:
+    """Lê chat exportado. Formatos aceitos:
+
+    * TwitchDownloader: {"comments": [{"content_offset_seconds", "commenter", "message"}]}
+    * Kick: lista (ou {"data"/"messages": [...]}) de mensagens {"created_at", "content", "sender"};
+      `vod_start` (epoch) diz quando o vídeo começou; sem ele, usa a primeira mensagem.
+    * JSONL simples: {"t": segundos_desde_o_inicio, "user": ..., "text": ...} por linha
+    """
+    from . import kick
+
     text = path.read_text(encoding="utf-8")
     msgs: list[ChatMessage] = []
     try:
@@ -230,6 +243,20 @@ def load_chat_file(path: Path, base_epoch: float) -> list[ChatMessage]:
             body = (c.get("message") or {}).get("body", "")
             user = (c.get("commenter") or {}).get("display_name", "?")
             msgs.append(ChatMessage(base_epoch + float(c["content_offset_seconds"]), user, body))
+    elif isinstance(data, (list, dict)):
+        items = data if isinstance(data, list) else (data.get("data") or data.get("messages") or [])
+        if isinstance(items, dict):  # {"data": {"messages": [...]}}
+            items = items.get("messages") or []
+        parsed = []
+        for it in items:
+            m = kick.parse_chat_event(json.dumps({"event": kick.CHAT_EVENT, "data": it}))
+            if m:
+                parsed.append(m)
+        if parsed:
+            start = vod_start if vod_start is not None else min(m.ts for m in parsed)
+            for m in parsed:
+                m.ts = base_epoch + (m.ts - start)
+            msgs = [m for m in parsed if m.ts >= base_epoch]
     else:
         for line in text.splitlines():
             if line.strip():
@@ -239,14 +266,15 @@ def load_chat_file(path: Path, base_epoch: float) -> list[ChatMessage]:
     return msgs
 
 
-def process_vod(cfg: Config, video: Path, chat_file: Path | None = None) -> list[int]:
+def process_vod(cfg: Config, video: Path, chat_file: Path | None = None,
+                vod_start: float | None = None) -> list[int]:
     cfg.ensure_dirs()
     work = cfg.data_dir / "vod_buffer"
     shutil.rmtree(work, ignore_errors=True)
     base = 1_000_000_000  # epoch artificial: segundo 0 do VOD
     vcfg = cfg.replace(buffer_override=work)
 
-    msgs = load_chat_file(chat_file, base) if chat_file else []
+    msgs = load_chat_file(chat_file, base, vod_start) if chat_file else []
     if not msgs:
         log.warning("Sem chat: detecção apenas pelo áudio (menos precisa)")
         vcfg = vcfg.replace(w_audio=max(cfg.w_audio, 1.6), threshold=min(cfg.threshold, 3.5),

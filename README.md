@@ -1,6 +1,6 @@
 # ✂️ GabeCuts — cortes automáticos e inteligentes da live do Gabepeixe
 
-O GabeCuts fica de olho no canal **twitch.tv/gabepeixe**. Quando a live abre, ele começa a gravar e lê o chat em tempo real. A partir do chat e do áudio, ele encontra os melhores momentos e gera os cortes prontos para postar:
+O GabeCuts fica de olho no canal do Gabepeixe na **Twitch** ou na **Kick** (ou nas duas, em multistream). Quando a live abre, ele começa a gravar e lê o chat em tempo real. A partir do chat e do áudio, ele encontra os melhores momentos e gera os cortes prontos para postar:
 
 - **16:9** (YouTube) e **9:16** (TikTok, Shorts, Reels), com fundo desfocado, título no topo e legenda queimada
 - **título, descrição e hashtags** escritos por IA (Claude), que também **descarta** picos sem conteúdo e **ajusta o início e o fim** de cada corte
@@ -8,9 +8,9 @@ O GabeCuts fica de olho no canal **twitch.tv/gabepeixe**. Quando a live abre, el
 - **aviso no Discord** quando sai um corte novo (opcional)
 
 ```
- Twitch ──► streamlink ──► ffmpeg ──► buffer circular (segmentos de 10s)
-   │                                        │
-   └─► chat (IRC/WebSocket)                 ├─► volume do áudio por segundo
+ Twitch/Kick ──► streamlink ou HLS ──► ffmpeg ──► buffer circular (segmentos de 10s)
+   │                                                 │
+   └─► chat Twitch (IRC) + chat Kick (Pusher)        ├─► volume do áudio por segundo
              │                              │
              ▼                              ▼
         ┌────────────── Detector de momentos ──────────────┐
@@ -61,12 +61,28 @@ gabecuts live --no-web     # sem painel
 gabecuts web               # só o painel (para revisar cortes já feitos)
 gabecuts vod live.mp4 --chat chat.json   # processa uma live antiga
 gabecuts --channel outro_canal live      # funciona com qualquer canal
+gabecuts --platform kick live            # live na Kick
+gabecuts --platform kick --chat-sources kick,twitch live   # multistream: vídeo da Kick, chat das duas
 ```
+
+### Kick
+
+Use `platform = "kick"` no `gabecuts.toml` ou `--platform kick` na linha de comando.
+
+- **Chat:** chega em tempo real pelo WebSocket público da Kick (Pusher), sem login. Os emotes (`[emote:123:KEKW]`) viram texto, então risada e hype são detectados igual à Twitch.
+- **Vídeo:** o GabeCuts pega a URL HLS da live na API da Kick e grava direto com o ffmpeg. Se a API falhar, ele usa o plugin de Kick do streamlink, que precisa do Chrome ou Chromium instalado para passar pelo desafio do Cloudflare.
+- **Cloudflare:** a API da Kick (`kick.com/api/v2/channels/<canal>`) fica atrás do Cloudflare. Se aparecer erro de bloqueio:
+  1. Instale o `curl_cffi`, que imita o Chrome: `pip install -e ".[kick]"`.
+  2. Se ainda falhar, abra `https://kick.com/api/v2/channels/gabepeixe` no navegador, procure `"chatroom":{"id":...}` e coloque esse número em `kick_chatroom_id`. Isso destrava o chat. O vídeo continua vindo pelo streamlink.
+- **Multistream:** com `chat_sources = "twitch,kick"`, as mensagens das duas plataformas entram no mesmo detector. O mesmo nick em plataformas diferentes conta como duas pessoas. O vídeo vem só de `platform`.
+- **Nomes diferentes:** se o canal tiver nome diferente em cada site, use `twitch_channel` e `kick_channel`.
 
 ### Modo VOD (lives antigas)
 
 1. Baixe o vídeo e o chat com o [TwitchDownloader](https://github.com/lay295/TwitchDownloader), por exemplo `TwitchDownloaderCLI videodownload` e `chatdownload` com saída `.json`.
 2. Rode `gabecuts vod video.mp4 --chat chat.json`.
+
+Para a Kick, o chat pode ser uma lista JSON de mensagens no formato da Kick (`created_at`, `content`, `sender`). Passe `--vod-start 2026-11-25T20:00:00-03:00` com o horário em que o vídeo começa, para alinhar o chat ao vídeo.
 
 O chat também pode ser um JSONL simples, com uma linha por mensagem: `{"t": 123.4, "user": "fulano", "text": "KKKK"}`. Sem chat, a detecção usa só o áudio e fica menos precisa.
 
@@ -100,10 +116,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Os testes cobrem o parser do chat, a classificação das mensagens, o detector (risada coletiva, spammer sozinho, pico de áudio, aquecimento), a revisão da IA (simulada), a geração do vídeo vertical com legenda e um teste ponta a ponta do modo VOD com vídeo sintético.
+Os testes cobrem o parser do chat da Twitch e da Kick, a junção de chats em multistream, a classificação das mensagens, o detector (risada coletiva, spammer sozinho, pico de áudio, aquecimento), a revisão da IA (simulada), a geração do vídeo vertical com legenda e um teste ponta a ponta do modo VOD com vídeo sintético.
 
 ## Observações
 
-- O chat é lido de forma anônima (não precisa de conta nem token). A checagem de live usa o streamlink.
-- Respeite os termos da Twitch e as regras de cortes do próprio Gabepeixe antes de repostar e monetizar o conteúdo.
+- O chat é lido de forma anônima nas duas plataformas, sem conta nem token.
+- A integração com a Kick usa endpoints não oficiais, os mesmos do site. Se a Kick mudar a chave do Pusher, o GabeCuts tenta descobrir a nova sozinho. Se não conseguir, defina `kick_pusher_key`.
+- Respeite os termos da Twitch e da Kick e as regras de cortes do próprio Gabepeixe antes de repostar e monetizar o conteúdo.
 - A transcrição roda localmente. Numa GPU, o modelo `small` acompanha a live com folga. Só com CPU, use `base` ou `tiny`.

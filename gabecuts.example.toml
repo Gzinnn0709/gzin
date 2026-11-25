@@ -1,6 +1,11 @@
 # Copie para gabecuts.toml e ajuste. Toda opção também pode ser passada por variável de
 # ambiente: GABECUTS_<NOME_EM_MAIUSCULAS>, ex: GABECUTS_THRESHOLD=5
 channel = "gabepeixe"
+platform = "twitch"              # de onde vem o VÍDEO: "twitch" ou "kick"
+# chat_sources = "twitch,kick"   # multistream: soma os chats das duas plataformas
+# twitch_channel = ""            # se o nome do canal mudar de uma plataforma para outra
+# kick_channel = ""
+# kick_chatroom_id = 0           # se a API da Kick (Cloudflare) bloquear; veja o README
 stream_quality = "best"          # ou "1080p60", "720p60", "480p"...
 data_dir = "data"
 
