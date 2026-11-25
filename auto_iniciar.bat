@@ -10,7 +10,8 @@ setlocal EnableDelayedExpansion
   set "ANTES="
   set "DEPOIS="
   for /f %%i in ('git rev-parse HEAD:pyproject.toml 2^>nul') do set "ANTES=%%i"
-  git pull -q --ff-only --autostash >nul 2>&1
+  for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "RAMO=%%b"
+  git fetch -q origin !RAMO! >nul 2>&1 && git reset -q --hard origin/!RAMO! >nul 2>&1
   for /f %%i in ('git rev-parse HEAD:pyproject.toml 2^>nul') do set "DEPOIS=%%i"
   if not "!ANTES!"=="!DEPOIS!" ".venv\Scripts\python.exe" -m pip install -q -e ".[whisper,kick]" >nul 2>&1
   call "%~dp0iniciar_cortes.bat" auto
