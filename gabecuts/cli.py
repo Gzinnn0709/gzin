@@ -50,8 +50,14 @@ def main(argv: list[str] | None = None) -> None:
                              encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
     logging.getLogger().addHandler(fh)
-    for noisy in ("httpx", "httpcore", "faster_whisper"):
+    for noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "faster_whisper"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    # avisos inofensivos do download do modelo de legenda (Windows sem symlink, sem token do HF)
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    import warnings
+    warnings.filterwarnings("ignore", module="huggingface_hub")
 
     from . import clipper
     clipper.THREADS = cfg.encode_threads
