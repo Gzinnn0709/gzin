@@ -59,7 +59,7 @@ Depois de instalado, abra a pasta do projeto no Explorer e clique duas vezes no 
 
 | arquivo | o que faz |
 |---|---|
-| `iniciar_cortes.bat` | inicia o GabeCuts **minimizado e com prioridade baixa**. Você pode deixar a live aberta no navegador (ganhando pontos) que ela não trava. |
+| `iniciar_cortes.bat` | **um clique faz as duas coisas**: abre a live no navegador (para ganhar pontos) e liga os cortes minimizados, com prioridade baixa. |
 | `parar_cortes.bat` | para tudo |
 | `atualizar.bat` | baixa a versão mais nova e atualiza as dependências |
 
