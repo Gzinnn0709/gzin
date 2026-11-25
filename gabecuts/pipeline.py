@@ -166,11 +166,14 @@ class LiveRunner:
                              self.cfg.platform)
                     self.detector = MomentDetector(self.cfg)  # baseline nova a cada live
                 else:
-                    log.warning("Gravação caiu durante a live; reiniciando")
+                    why = self.recorder.exit_info() if self.recorder else ""
+                    log.warning("Gravação caiu durante a live; reiniciando. Motivo: %s",
+                                why or "(veja data/ffmpeg.log)")
                 if self.recorder:
                     self.recorder.stop()
                 self.recorder = Recorder(st.page_url, self.cfg.buffer_dir, self.cfg.segment_seconds,
-                                         self.cfg.stream_quality, st.hls_url)
+                                         self.cfg.stream_quality, st.hls_url,
+                                         log_path=self.cfg.data_dir / "ffmpeg.log")
                 self.recorder.start()
                 self.live = True
             elif not live and self.live:
@@ -180,12 +183,14 @@ class LiveRunner:
                 if self.recorder:
                     self.recorder.stop()
                 self.live = False
-            await asyncio.sleep(self.cfg.live_check_interval if not self.live else 30)
+            await asyncio.sleep(self.cfg.live_check_interval if not self.live else 15)
 
     async def _segment_loop(self) -> None:
         """Mede o áudio de cada segmento assim que ele fica pronto e limpa o buffer."""
         while True:
-            for seg in list_segments(self.cfg.buffer_dir, self.cfg.segment_seconds):
+            if self.recorder:
+                await asyncio.to_thread(self.recorder.collect)
+            for seg in list_segments(self.cfg.buffer_dir, self.cfg.segment_seconds, include_last=True):
                 if seg.path.name in self.analyzed:
                     continue
                 levels = await asyncio.to_thread(audio_levels, seg.path)
