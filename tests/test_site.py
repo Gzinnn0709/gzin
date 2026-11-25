@@ -36,6 +36,12 @@ def site_falso():
         recebido["arquivos"][f"{cid}/{nome}"] = await request.body()
         return {"sucesso": True}
 
+    @app.post("/api/cortes/status")
+    async def status(request: Request):
+        auth(request)
+        recebido["status"] = await request.json()
+        return {"sucesso": True, "cortar_agora": 30}
+
     @app.post("/api/cortes/{cid}")
     async def registrar(cid: str, request: Request):
         auth(request)
@@ -81,7 +87,8 @@ def test_conectar_pelo_painel_e_enviar(tmp_path, site_falso):
     assert up.sync() == 1
     sid = "20261125_221530_7_engraado"
     assert recebido["arquivos"][f"{sid}/vertical.mp4"] == b"V" * 100
-    assert set(k.split("/")[1] for k in recebido["arquivos"]) == {"vertical.mp4", "corte.mp4", "thumb.jpg"}
+    # só uma versão do vídeo + miniatura (economiza o espaço grátis)
+    assert set(k.split("/")[1] for k in recebido["arquivos"]) == {"vertical.mp4", "thumb.jpg"}
     reg = recebido["registros"][sid]
     assert reg["titulo"] == "Gabe ri demais" and reg["hashtags"] == ["gabepeixe"] and reg["duracao"] == 41
     assert db.get(cid)["enviado"] == 1
@@ -103,3 +110,12 @@ def test_codigo_errado_registra_erro_sem_marcar_enviado(tmp_path, site_falso):
 def test_id_no_site_e_url():
     assert site.id_no_site({"id": 3, "file_h": "2026_9_engraçado/corte.mp4"}) == "2026_9_engraado"
     assert site.normalizar_url("www.aamcell.com.br/") == "https://www.aamcell.com.br"
+
+
+def test_status_e_cortar_agora(tmp_path, site_falso):
+    url, recebido = site_falso
+    cfg = Config(data_dir=tmp_path / "data"); cfg.ensure_dirs()
+    assert site.enviar_status(cfg, {"live": True}) == 0  # sem código: não manda nada
+    site.salvar(cfg, url, CODIGO)
+    assert site.enviar_status(cfg, {"live": True, "momentos": 2}) == 30
+    assert recebido["status"]["momentos"] == 2

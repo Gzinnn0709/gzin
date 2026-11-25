@@ -103,12 +103,16 @@ Para a Kick, o chat pode ser uma lista JSON de mensagens no formato da Kick (`cr
 
 O chat também pode ser um JSONL simples, com uma linha por mensagem: `{"t": 123.4, "user": "fulano", "text": "KKKK"}`. Sem chat, a detecção usa só o áudio e fica menos precisa.
 
-### Ver os cortes no site (aba escondida, só para o admin)
+### Ver os cortes no site (página `/cortes`, só para o admin)
 
-Os cortes prontos podem ir sozinhos para a aba **Administração → ✂️ Cortes** do site da loja.
-Lá você assiste, baixa e copia a legenda de qualquer lugar, inclusive pelo celular.
+Os cortes prontos podem ir sozinhos para a página **`/cortes`** do site da loja. Ela funciona como este painel: mostra se a live está sendo gravada e tem os botões de assistir, baixar, copiar a legenda, apagar e **✂️ Cortar agora**. Funciona de qualquer lugar, inclusive pelo celular.
 
-1. No site, entre com a conta de admin e vá em **Administração → ✂️ Cortes → 🔗 Conectar GabeCuts**. O código já sai copiado.
+Tudo cabe nos planos grátis do Render e do Supabase:
+- **Só uma versão leve de cada corte vai para o site:** 720p, uns 2 a 5 MB por corte.
+- **O site guarda até 300 MB e apaga os mais antigos sozinho.** No notebook, todos os cortes continuam.
+- **O GabeCuts avisa o site a cada minuto durante a live.** Fora dela, avisa a cada 30 minutos, e assim o Render grátis pode dormir.
+
+1. No site, entre com a conta de admin e abra **`/cortes`** (ou **Administração → ✂️ Cortes**). Clique em **🔗 Conectar GabeCuts**: o código já sai copiado.
 2. No painel do GabeCuts (http://localhost:8000), clique em **🌐 Site**, cole o código e clique em **Conectar**.
 
 A partir daí, cada corte pronto (exceto os descartados) é enviado em segundo plano. O código fica em `data/site.json`, que não vai para o git.

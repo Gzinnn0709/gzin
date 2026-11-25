@@ -222,12 +222,28 @@ class LiveRunner:
                              self._detect_loop(), self._clip_worker(), self._site_loop())
 
     async def _site_loop(self) -> None:
-        """Manda os cortes prontos para a aba Cortes do site (se estiver conectado)."""
+        """Manda os cortes prontos e a situação para a página /cortes do site (se conectado).
+
+        A cada minuto também pergunta se alguém pediu "Cortar agora" pela página.
+        """
+        ultimo_status = 0.0
         while True:
             try:
                 await asyncio.to_thread(self.site.sync)
-            except Exception:  # noqa: BLE001
-                log.exception("Erro no envio para o site")
+                # durante a live: a cada minuto. Fora dela: a cada 30 min, para o Render grátis
+                # poder dormir (o plano grátis tem horas limitadas por mês)
+                if time.time() - ultimo_status >= (60 if self.live else 1800):
+                    ultimo_status = time.time()
+                    dados = dict(live=self.live, gravando=bool(self.recorder and self.recorder.running()),
+                                 canal=f"{self.cfg.platform}:{self.cfg.channel_for(self.cfg.platform)}",
+                                 fila=self.queue.qsize(), mensagens=self.stats["messages"],
+                                 momentos=self.stats["moments"])
+                    segundos = await asyncio.to_thread(site.enviar_status, self.cfg, dados)
+                    if segundos and self.live:
+                        log.info("✂️  'Cortar agora' pedido pela página do site")
+                        self.clip_now(float(segundos))
+            except Exception as e:  # noqa: BLE001
+                log.warning("Site: %s", str(e)[:200])
             await asyncio.sleep(20)
 
     async def _chat_loop(self) -> None:

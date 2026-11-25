@@ -109,6 +109,15 @@ def make_vertical(src: Path, out: Path, srt: Path | None = None, title: str | No
     return out
 
 
+def web_version(src: Path, out: Path, vertical: bool = True) -> Path:
+    """Versão leve para o site (cabe no plano grátis): 720p, CRF 28, áudio 96k (~3-5 MB/corte)."""
+    scale = "scale=720:-2" if vertical else "scale=-2:720"
+    _run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", scale, "-c:v", "libx264",
+          "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+          "-movflags", "+faststart", str(out)])
+    return out
+
+
 def thumbnail(src: Path, out: Path, at: float) -> Path:
     _run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(at, 0):.2f}", "-i", str(src),
           "-frames:v", "1", "-vf", "scale=480:-2", str(out)])

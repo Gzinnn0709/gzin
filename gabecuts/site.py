@@ -99,11 +99,23 @@ class SiteUploader:
         cid = id_no_site(clip)
         h = {"Authorization": f"Bearer {codigo}"}
         base = f"{normalizar_url(url)}/api/cortes/{cid}"
+        # só UMA versão leve do vídeo (o vertical, se houver) + miniatura: economiza o 1 GB grátis
+        from . import clipper
         arquivos = []
-        if clip.get("file_v"):
-            arquivos.append(("vertical.mp4", self.cfg.clips_dir / clip["file_v"]))
-        if clip.get("file_h"):
-            arquivos.append(("corte.mp4", self.cfg.clips_dir / clip["file_h"]))
+        fonte = None
+        if clip.get("file_v") and (self.cfg.clips_dir / clip["file_v"]).exists():
+            fonte, nome_site, vertical = self.cfg.clips_dir / clip["file_v"], "vertical.mp4", True
+        elif clip.get("file_h") and (self.cfg.clips_dir / clip["file_h"]).exists():
+            fonte, nome_site, vertical = self.cfg.clips_dir / clip["file_h"], "corte.mp4", False
+        if fonte is not None:
+            leve = fonte.parent / "site.mp4"
+            if not leve.exists():
+                try:
+                    clipper.web_version(fonte, leve, vertical)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Versão leve falhou (%s); enviando o original", str(e)[-200:])
+                    leve = fonte
+            arquivos.append((nome_site, leve))
         if clip.get("thumb"):
             arquivos.append(("thumb.jpg", self.cfg.clips_dir / clip["thumb"]))
         enviados = 0
@@ -158,6 +170,21 @@ class SiteUploader:
         finally:
             self._lock.release()
         return enviados
+
+
+def enviar_status(cfg: Config, dados: dict) -> int:
+    """Manda a situação para a página /cortes do site. Devolve os segundos de um 'Cortar agora'
+    pedido pela página (0 se nenhum)."""
+    c = carregar(cfg)
+    if not c.get("codigo"):
+        return 0
+    r = httpx.post(f"{normalizar_url(c['url'])}/api/cortes/status", json=dados, timeout=60,
+                   headers={"Authorization": f"Bearer {c['codigo']}"})
+    _checar(r)
+    try:
+        return int(r.json().get("cortar_agora") or 0)
+    except (ValueError, TypeError):
+        return 0
 
 
 def _checar(r: httpx.Response) -> None:
