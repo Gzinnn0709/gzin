@@ -27,7 +27,7 @@ w_audio = 0.7
 # Saída
 vertical = true                  # gera 9:16 para TikTok/Shorts/Reels
 burn_subtitles = true            # legenda queimada (precisa do faster-whisper)
-whisper_model = "small"          # tiny/base/small/medium/large-v3
+whisper_model = "auto"           # auto (base na CPU, small com GPU), tiny/base/small/medium, ou "off"
 
 # IA (precisa de ANTHROPIC_API_KEY no ambiente)
 ai_enabled = true

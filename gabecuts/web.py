@@ -53,13 +53,22 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
             db.update(clip_id, **changes)
         return {"ok": True}
 
+    @app.post("/api/clip-now")
+    async def clip_now(seconds: float = 45):
+        if not runner:
+            raise HTTPException(400, "corte manual só funciona com o 'gabecuts live' rodando")
+        if not runner.live:
+            raise HTTPException(409, "a live não está sendo gravada agora")
+        return {"id": runner.clip_now(max(10.0, min(seconds, 120.0)))}
+
     @app.get("/api/status")
     def status():
         if not runner:
             return {"mode": "painel", "channel": cfg.channel}
         recent = list(runner.detector.recent_scores)[-120:]
         return {"mode": "ao vivo", "channel": cfg.channel, "live": runner.live,
-                "threshold": cfg.threshold, **runner.stats,
+                "recording": bool(runner.recorder and runner.recorder.running()),
+                "queue": runner.queue.qsize(), "threshold": cfg.threshold, **runner.stats,
                 "scores": [[t, s] for t, s, _ in recent]}
 
     @app.get("/", response_class=HTMLResponse)
@@ -88,13 +97,16 @@ video{width:100%;aspect-ratio:16/9;background:#000}
 .title{font-weight:700;font-size:16px}.meta{color:var(--mut);font-size:13px}
 .tags{color:var(--acc);font-size:13px}.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 button,a.btn{border:0;border-radius:6px;padding:6px 10px;cursor:pointer;background:#2a2a2d;color:var(--fg);font-size:13px;text-decoration:none}
-.ap{background:var(--ok);color:#000}.rj{background:var(--bad);color:#fff}
+.ap{background:var(--ok);color:#000}.wait{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:#000;color:var(--mut);text-align:center;padding:12px}
+.err{color:#ff6b6b;font-size:13px;word-break:break-word}.rj{background:var(--bad);color:#fff}
 select{background:#2a2a2d;color:var(--fg);border:0;border-radius:6px;padding:6px}
 #graph{padding:0 20px}
 </style></head><body>
 <header><h1>✂️ GabeCuts</h1><span class="pill">{{CHANNEL}}</span><span id="st" class="pill">…</span>
 <select id="f"><option value="">todos</option><option>pendente</option><option>aprovado</option>
-<option>postado</option><option>rejeitado</option><option>descartado</option></select></header>
+<option>postado</option><option>rejeitado</option><option>descartado</option><option>processando</option>
+<option>na fila</option><option>erro</option></select>
+<button class="ap" id="now" title="Corta os últimos 45 segundos da live">✂️ Cortar agora</button></header>
 <div id="graph"><canvas id="cv" width="1200" height="70"></canvas></div>
 <main id="list"></main>
 <script>
@@ -102,25 +114,29 @@ const $=s=>document.querySelector(s);
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function load(){
   const f=$('#f').value; const r=await fetch('/api/clips'+(f?'?status='+f:'')); const cs=await r.json();
-  $('#list').innerHTML=cs.map(c=>`<div class="card" id="clip-${c.id}">
-   <video controls preload="none" poster="/media/${c.thumb||''}" src="/media/${c.file_v||c.file_h}"></video>
+  $('#list').innerHTML=cs.map(c=>{const busy=c.status==='na fila'||c.status==='processando';const f=c.file_v||c.file_h;
+   const media=f?`<video controls preload="none" poster="/media/${c.thumb||''}" src="/media/${f}"></video>`:
+     `<div class="wait">${c.status==='erro'?'❌ erro':'⏳ '+esc(c.description)}</div>`;
+   return `<div class="card" id="clip-${c.id}">${media}
    <div class="body"><div class="title">#${c.id} · ${esc(c.title)}</div>
    <div class="meta">${new Date(c.created_at*1000).toLocaleString('pt-BR')} · ${esc(c.category)} · nota ${c.ai_score??'-'} · ${(c.t_end-c.t_start).toFixed(0)}s · <b>${c.status}</b>${c.by_ai?' · 🤖':''}</div>
-   <div class="meta">${esc(c.description)}</div>
+   <div class="meta">${busy?'':esc(c.description)}</div>
+   ${c.status==='erro'?`<div class="err">${esc(c.reason)}</div>`:''}
    <div class="tags">${(c.hashtags||[]).map(h=>'#'+esc(h)).join(' ')}</div>
-   <div class="btns"><button class="ap" onclick="st(${c.id},'aprovado')">Aprovar</button>
+   ${busy||c.status==='erro'?'':`<div class="btns"><button class="ap" onclick="st(${c.id},'aprovado')">Aprovar</button>
    <button class="rj" onclick="st(${c.id},'rejeitado')">Rejeitar</button>
    <button onclick="st(${c.id},'postado')">Postado</button>
-   <a class="btn" href="/media/${c.file_h}" download>⬇ 16:9</a>
+   ${c.file_h?`<a class="btn" href="/media/${c.file_h}" download>⬇ 16:9</a>`:''}
    ${c.file_v?`<a class="btn" href="/media/${c.file_v}" download>⬇ 9:16</a>`:''}
-   <button onclick="cp(${c.id})">Copiar legenda</button></div></div></div>`).join('')||'<p>Nenhum corte ainda.</p>';
+   <button onclick="cp(${c.id})">Copiar legenda</button></div>`}</div></div>`}).join('')||'<p>Nenhum corte ainda. Quando o chat explodir, o momento aparece aqui na hora — ou clique em ✂️ Cortar agora.</p>';
+  window._busy=cs.some(c=>c.status==='na fila'||c.status==='processando');
   window._cs=cs;
 }
 async function st(id,s){await fetch(`/api/clips/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})});load()}
 function cp(id){const c=_cs.find(x=>x.id===id);navigator.clipboard.writeText(`${c.title}\\n\\n${c.description}\\n\\n${(c.hashtags||[]).map(h=>'#'+h).join(' ')}`)}
 async function status(){
   try{const s=await (await fetch('/api/status')).json();
-  $('#st').textContent=s.mode==='ao vivo'?(s.live?'🔴 AO VIVO':'⚫ offline')+` · ${s.messages} msgs · ${s.moments} momentos`:'painel';
+  $('#st').textContent=s.mode==='ao vivo'?(s.live?(s.recording?'🔴 AO VIVO · gravando':'🟠 AO VIVO · gravação reiniciando'):'⚫ offline')+` · ${s.messages} msgs · ${s.moments} momentos · ${s.queue} na fila`:'painel';
   $('#st').className='pill'+(s.live?' live':'');
   const cv=$('#cv'),x=cv.getContext('2d');x.clearRect(0,0,cv.width,cv.height);
   if(s.scores&&s.scores.length){const mx=Math.max(s.threshold*1.5,...s.scores.map(p=>p[1]));const w=cv.width/s.scores.length;
@@ -128,5 +144,8 @@ async function status(){
    const ty=cv.height-s.threshold/mx*cv.height;x.fillStyle='#ffffff55';x.fillRect(0,ty,cv.width,1)}
   else $('#graph').style.display='none';}catch(e){}
 }
-$('#f').onchange=load;load();status();setInterval(status,3000);setInterval(load,20000);
+$('#now').onclick=async()=>{const b=$('#now');b.disabled=true;const r=await fetch('/api/clip-now',{method:'POST'});
+ const j=await r.json();b.disabled=false;if(!r.ok){alert(j.detail||'erro');return}load()};
+let tick=0;$('#f').onchange=load;load();status();setInterval(status,3000);
+setInterval(()=>{tick++;if(window._busy||tick%5===0)load()},4000);
 </script></body></html>"""

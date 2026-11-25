@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -50,6 +51,16 @@ SUB_STYLE = ("FontName=Arial,FontSize=13,Bold=1,PrimaryColour=&H00FFFFFF,Outline
              "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=70")
 
 
+def _font_opt() -> str:
+    """No Windows o drawtext nem sempre acha fonte sozinho; apontamos para a Arial."""
+    if os.name == "nt":
+        for name in ("arialbd.ttf", "arial.ttf", "segoeuib.ttf"):
+            f = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / name
+            if f.exists():
+                return "fontfile='" + f.as_posix().replace(":", "\\:") + "':"
+    return ""
+
+
 def wrap_title(title: str, width: int = 24, max_lines: int = 2) -> list[str]:
     lines, cur = [], ""
     for w in title.split():
@@ -77,8 +88,8 @@ def make_vertical(src: Path, out: Path, srt: Path | None = None, title: str | No
     for i, line in enumerate(wrap_title(title or "")):
         safe = (line.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\u2019")
                 .replace("%", "\\%"))
-        vf += (f",drawtext=text='{safe}':fontcolor=white:fontsize=64:borderw=5:bordercolor=black"
-               f":x=(w-text_w)/2:y={200 + i * 80}")
+        vf += (f",drawtext={_font_opt()}text='{safe}':fontcolor=white:fontsize=64:borderw=5"
+               f":bordercolor=black:x=(w-text_w)/2:y={200 + i * 80}")
     if srt is not None and srt.exists():
         # o filtro subtitles é chato com caminhos; rodamos com cwd na pasta do arquivo
         vf += f",subtitles={srt.name}:force_style='{SUB_STYLE}'"

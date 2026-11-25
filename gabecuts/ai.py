@@ -72,6 +72,7 @@ def heuristic_review(duration: float, category: str, stats: dict, peak_score: fl
         "engraçado": "O CHAT NÃO AGUENTOU de tanto rir",
         "hype": "Que momento INSANO na live",
         "pedido do chat": "O chat pediu e o corte veio",
+        "manual": "Momento da live do Gabepeixe",
         "reação": "A reação do Gabe nesse momento",
     }
     score = int(max(0, min(100, 30 + peak_score * 6)))
@@ -79,7 +80,7 @@ def heuristic_review(duration: float, category: str, stats: dict, peak_score: fl
                   title=titles.get(category, "Momento da live do Gabepeixe"),
                   description="Corte automático da live do Gabepeixe.",
                   hashtags=["gabepeixe", "cortes", "twitch", "live"],
-                  category=category if category in CATEGORIES else "reação",
+                  category=category,
                   trim_start=0.0, trim_end=duration, reason="modo heurístico (sem IA)")
 
 

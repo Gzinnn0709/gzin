@@ -62,7 +62,7 @@ class Config:
     video_preset: str = "veryfast"
 
     # Transcrição (faster-whisper, opcional)
-    whisper_model: str = "small"
+    whisper_model: str = "auto"     # auto = "small" com GPU NVIDIA, "base" só com CPU; "off" desliga
     whisper_device: str = "auto"
     whisper_language: str = "pt"
 

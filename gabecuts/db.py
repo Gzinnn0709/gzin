@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS clips (
 CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);
 """
 
-STATUSES = ("pendente", "aprovado", "rejeitado", "postado", "descartado")
+STATUSES = ("na fila", "processando", "pendente", "aprovado", "rejeitado", "postado", "descartado", "erro")
 
 
 class ClipDB:

@@ -21,21 +21,35 @@ def available() -> bool:
     try:
         import faster_whisper  # noqa: F401
         return True
-    except ImportError:
+    except Exception:  # noqa: BLE001 - no Windows pode faltar DLL (OSError), não só ImportError
         return False
 
 
-def transcribe(path: Path, model_size: str = "small", device: str = "auto",
+def _has_cuda() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def transcribe(path: Path, model_size: str = "auto", device: str = "auto",
                language: str = "pt") -> list[Line]:
     global _model
     if not available():
         return []
     from faster_whisper import WhisperModel
     if _model is None:
-        log.info("Carregando modelo Whisper '%s'...", model_size)
-        _model = WhisperModel(model_size, device=device, compute_type="auto")
+        cuda = _has_cuda() if device == "auto" else device == "cuda"
+        if model_size == "auto":
+            model_size = "small" if cuda else "base"
+        dev = "cuda" if cuda else "cpu"
+        compute = "float16" if cuda else "int8"  # int8 deixa a CPU bem mais rápida
+        log.info("Carregando Whisper '%s' (%s). Na primeira vez ele baixa o modelo, pode demorar…",
+                 model_size, dev)
+        _model = WhisperModel(model_size, device=dev, compute_type=compute)
     segments, _info = _model.transcribe(str(path), language=language, vad_filter=True,
-                                        word_timestamps=False)
+                                        beam_size=1, word_timestamps=False)
     return [Line(s.start, s.end, s.text.strip()) for s in segments if s.text.strip()]
 
 

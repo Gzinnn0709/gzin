@@ -26,6 +26,15 @@ from .signals import audio_levels
 log = logging.getLogger(__name__)
 
 
+def _try(fn, what: str):
+    """Roda uma etapa opcional; em caso de erro, registra e devolve None."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Etapa '%s' falhou (o corte continua): %s", what, str(e)[-300:])
+        return None
+
+
 class ClipProcessor:
     """Transforma um Moment em arquivos de vídeo + metadados no banco."""
 
@@ -42,80 +51,122 @@ class ClipProcessor:
         return [f"[{m.ts - t0:5.1f}] {m.user}: {m.text[:200]}"
                 for m in self.chat_history if t0 <= m.ts <= t1 + self.cfg.chat_delay + 5]
 
-    def process(self, m: Moment) -> int | None:
+    def enqueue(self, m: Moment) -> int:
+        """Registra o momento no banco já na detecção, para aparecer no painel na hora."""
+        return self.db.insert(
+            channel=f"{self.cfg.platform}:{self.cfg.channel_for(self.cfg.platform)}",
+            t_start=m.clip_start, t_end=m.clip_end, peak_score=m.peak_score, category=m.category,
+            title=f"Momento {m.category} detectado (score {m.peak_score:.1f})",
+            description="Aguardando a gravação para cortar…", status="na fila", stats=m.stats)
+
+    def process(self, m: Moment, clip_id: int | None = None) -> int | None:
+        """Gera o corte. Qualquer etapa opcional pode falhar sem perder o vídeo."""
+        if clip_id is None:
+            clip_id = self.enqueue(m)
+        self.db.update(clip_id, status="processando", description="Cortando o vídeo…")
+        try:
+            self._process(m, clip_id)
+        except Exception as e:  # noqa: BLE001
+            log.exception("Erro ao gerar o corte #%d", clip_id)
+            self.db.update(clip_id, status="erro", reason=str(e)[:500],
+                           description="Falhou ao gerar o corte. Veja o motivo abaixo.")
+        return clip_id
+
+    def _process(self, m: Moment, clip_id: int) -> None:
         cfg = self.cfg
+        rel = lambda p: str(p.relative_to(cfg.clips_dir)) if p else None  # noqa: E731
         segs = segments_for_range(list_segments(cfg.buffer_dir, cfg.segment_seconds, include_last=True),
                                   m.clip_start, m.clip_end)
         if not segs:
-            log.warning("Momento %.0f sem vídeo no buffer (gravação ativa?)", m.peak_time)
-            return None
+            raise clipper.ClipError("não há vídeo gravado para esse momento – a gravação está "
+                                    "funcionando? Veja data/ffmpeg.log")
         t0 = max(m.clip_start, segs[0].start)
         t1 = min(m.clip_end, segs[-1].end)
-        stamp = datetime.fromtimestamp(m.peak_time).strftime("%Y%m%d_%H%M%S")
-        folder = cfg.clips_dir / f"{stamp}_{m.category.replace(' ', '-')}"
-        folder.mkdir(parents=True, exist_ok=True)
-
-        raw = clipper.cut_from_segments(segs, t0, t1, folder / "raw.mp4", cfg.video_crf, cfg.video_preset)
         duration = t1 - t0
+        stamp = datetime.fromtimestamp(m.peak_time).strftime("%Y%m%d_%H%M%S")
+        folder = cfg.clips_dir / f"{stamp}_{clip_id}_{m.category.replace(' ', '-')}"
+        folder.mkdir(parents=True, exist_ok=True)
+        peak_offset = max(0.0, m.peak_time - cfg.chat_delay - t0)
 
-        lines = transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device, cfg.whisper_language)
+        # 1) corte bruto 16:9 – já fica visível no painel
+        tc = time.time()
+        raw = clipper.cut_from_segments(segs, t0, t1, folder / "bruto.mp4", cfg.video_crf, cfg.video_preset)
+        thumb = _try(lambda: clipper.thumbnail(raw, folder / "thumb.jpg", peak_offset), "miniatura")
+        self.db.update(clip_id, file_h=rel(raw), thumb=rel(thumb), t_start=t0, t_end=t1,
+                       description="Corte pronto. Transcrevendo e revisando…")
+        log.info("✂️  Corte #%d cortado em %.0fs (%s, %.0fs de vídeo)", clip_id, time.time() - tc,
+                 m.category, duration)
+
+        # 2) transcrição (opcional)
+        lines: list = []
+        if cfg.whisper_model.lower() not in ("off", "none", "0", ""):
+            tw = time.time()
+            lines = _try(lambda: transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device,
+                                                       cfg.whisper_language), "transcrição") or []
+            if lines:
+                log.info("Corte #%d transcrito em %.0fs", clip_id, time.time() - tw)
         transcript = transcribe.to_text(lines)
 
+        # 3) revisão (IA ou heurística)
         chat = self.chat_sample(t0, t1)
-        peak_offset = m.peak_time - cfg.chat_delay - t0
+        rv = None
         if cfg.ai_enabled:
-            rv = ai.ai_review(cfg.ai_model, duration, transcript, chat, m.stats, m.category,
-                              peak_offset, m.peak_score)
-        else:
-            rv = ai.heuristic_review(duration, m.category, m.stats, m.peak_score)
-
+            rv = _try(lambda: ai.ai_review(cfg.ai_model, duration, transcript, chat, m.stats,
+                                           m.category, peak_offset, m.peak_score), "revisão da IA")
+        rv = rv or ai.heuristic_review(duration, m.category, m.stats, m.peak_score)
         status = "pendente"
         if not rv.keep or rv.score < cfg.ai_min_score:
             status = "descartado"
-            log.info("Corte descartado (%s, nota %d): %s", m.category, rv.score, rv.reason)
+            log.info("Corte #%d descartado (nota %d): %s", clip_id, rv.score, rv.reason)
 
-        final = folder / "corte.mp4"
+        # 4) corte final (ajuste fino da IA)
+        final = raw
         if rv.trim_start > 0.5 or rv.trim_end < duration - 0.5:
-            clipper.trim(raw, rv.trim_start, rv.trim_end, final, cfg.video_crf, cfg.video_preset)
-            raw.unlink(missing_ok=True)
-        else:
-            raw.rename(final)
+            final = _try(lambda: clipper.trim(raw, rv.trim_start, rv.trim_end, folder / "corte.mp4",
+                                              cfg.video_crf, cfg.video_preset), "ajuste fino") or raw
+        if final == raw:
+            rv.trim_start, rv.trim_end = 0.0, duration
         final_dur = rv.trim_end - rv.trim_start
-
         lines = transcribe.shift(lines, rv.trim_start, final_dur)
         srt = None
         if lines:
             srt = folder / "legenda.srt"
             srt.write_text(transcribe.to_srt(lines), encoding="utf-8")
 
+        # 5) vertical 9:16 (tenta com legenda+título; se falhar, sem eles)
         vertical = None
         if cfg.vertical and status != "descartado":
-            try:
-                vertical = clipper.make_vertical(final, folder / "vertical.mp4",
-                                                 srt if cfg.burn_subtitles else None, rv.title,
-                                                 cfg.video_crf, cfg.video_preset)
-            except clipper.ClipError as e:
-                log.error("Falha ao gerar vertical: %s", e)
-        thumb = clipper.thumbnail(final, folder / "thumb.jpg", max(0.0, peak_offset - rv.trim_start))
+            self.db.update(clip_id, description="Gerando versão vertical…")
+            for use_srt, use_title in ((cfg.burn_subtitles, True), (False, True), (False, False)):
+                try:
+                    vertical = clipper.make_vertical(final, folder / "vertical.mp4",
+                                                     srt if use_srt else None,
+                                                     rv.title if use_title else None,
+                                                     cfg.video_crf, cfg.video_preset)
+                    break
+                except clipper.ClipError as e:
+                    log.warning("Vertical falhou (legenda=%s, título=%s): %s", use_srt, use_title,
+                                str(e)[-300:])
+        if final != raw:
+            thumb = _try(lambda: clipper.thumbnail(final, folder / "thumb.jpg",
+                                                   max(0.0, peak_offset - rv.trim_start)), "miniatura") or thumb
 
         meta = dict(title=rv.title, description=rv.description, hashtags=rv.hashtags,
                     category=rv.category, score=rv.score, reason=rv.reason, by_ai=rv.by_ai,
                     clip_start=t0 + rv.trim_start, clip_end=t0 + rv.trim_end, stats=m.stats,
                     transcript=transcript)
         (folder / "info.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        rel = lambda p: str(p.relative_to(cfg.clips_dir)) if p else None  # noqa: E731
-        clip_id = self.db.insert(
-            channel=f"{cfg.platform}:{cfg.channel_for(cfg.platform)}", t_start=t0 + rv.trim_start, t_end=t0 + rv.trim_end,
-            peak_score=m.peak_score, ai_score=rv.score, category=rv.category, title=rv.title,
-            description=rv.description, hashtags=rv.hashtags, reason=rv.reason, by_ai=int(rv.by_ai),
-            status=status, file_h=rel(final), file_v=rel(vertical), thumb=rel(thumb),
-            transcript=transcript, stats=m.stats)
-        log.info("✂️  Corte #%d [%s] nota %d: %s (%.0fs)", clip_id, rv.category, rv.score, rv.title,
+        self.db.update(clip_id, t_start=t0 + rv.trim_start, t_end=t0 + rv.trim_end,
+                       ai_score=rv.score, category=rv.category, title=rv.title,
+                       description=rv.description, hashtags=json.dumps(rv.hashtags, ensure_ascii=False),
+                       reason=rv.reason, by_ai=int(rv.by_ai), status=status, file_h=rel(final),
+                       file_v=rel(vertical), thumb=rel(thumb), transcript=transcript)
+        if final != raw:
+            _try(lambda: raw.unlink(missing_ok=True), "limpeza")  # no Windows pode estar aberto no painel
+        log.info("✅ Corte #%d pronto [%s] nota %d: %s (%.0fs)", clip_id, rv.category, rv.score, rv.title,
                  final_dur)
         if status != "descartado":
             self.notify(clip_id, rv, final_dur)
-        return clip_id
 
     def notify(self, clip_id: int, rv: ai.Review, duration: float) -> None:
         if not self.cfg.discord_webhook_url:
@@ -142,8 +193,26 @@ class LiveRunner:
         self.recorder: Recorder | None = None
         self.live = False
         self.analyzed: set[str] = set()
-        self.queue: asyncio.Queue[Moment] = asyncio.Queue()
+        self.queue: asyncio.Queue[tuple[int, Moment]] = asyncio.Queue()
         self.stats = dict(messages=0, moments=0, started_at=time.time())
+        # cortes que ficaram pela metade numa execução anterior
+        for c in self.db.list(limit=500):
+            if c["status"] in ("na fila", "processando"):
+                self.db.update(c["id"], status="erro", reason="o programa foi fechado antes de terminar")
+
+    def submit(self, m: Moment) -> int:
+        clip_id = self.processor.enqueue(m)
+        self.queue.put_nowait((clip_id, m))
+        return clip_id
+
+    def clip_now(self, seconds: float = 45.0) -> int:
+        """Corte manual dos últimos `seconds` segundos (botão do painel)."""
+        now = time.time()
+        m = Moment(event_start=now, event_end=now, peak_time=now, peak_score=0.0,
+                   clip_start=now - seconds, clip_end=now, category="manual",
+                   stats={"manual": True})
+        log.info("✂️  Corte manual pedido no painel (%.0fs)", seconds)
+        return self.submit(m)
 
     async def run(self) -> None:
         await asyncio.gather(self._chat_loop(), self._live_loop(), self._segment_loop(),
@@ -179,7 +248,7 @@ class LiveRunner:
             elif not live and self.live:
                 log.info("⚫ Live encerrada")
                 for m in self.detector.flush():
-                    await self.queue.put(m)
+                    self.submit(m)
                 if self.recorder:
                     self.recorder.stop()
                 self.live = False
@@ -207,20 +276,18 @@ class LiveRunner:
             if self.live:
                 for m in self.detector.tick(time.time()):
                     self.stats["moments"] += 1
-                    log.info("⚡ Momento detectado: %s score %.1f", m.category, m.peak_score)
-                    await self.queue.put(m)
+                    log.info("⚡ Momento detectado: %s score %.1f (%.0fs)", m.category, m.peak_score,
+                             m.duration)
+                    self.submit(m)
             await asyncio.sleep(1)
 
     async def _clip_worker(self) -> None:
         while True:
-            m = await self.queue.get()
+            clip_id, m = await self.queue.get()
             # espera o vídeo até o fim do corte estar gravado
-            while self.live and time.time() < m.clip_end + self.cfg.segment_seconds + 2:
+            while self.live and time.time() < m.clip_end + self.cfg.segment_seconds + 4:
                 await asyncio.sleep(2)
-            try:
-                await asyncio.to_thread(self.processor.process, m)
-            except Exception:  # noqa: BLE001
-                log.exception("Erro ao processar momento")
+            await asyncio.to_thread(self.processor.process, m, clip_id)
 
 
 # ---------------------------------------------------------------------------
@@ -302,12 +369,8 @@ def process_vod(cfg: Config, video: Path, chat_file: Path | None = None,
     log.info("%d momentos encontrados", len(moments))
     ids = []
     for m in moments:
-        try:
-            cid = proc.process(m)
-        except clipper.ClipError as e:
-            log.error("Falha no corte: %s", e)
-            continue
-        if cid:
+        cid = proc.process(m)
+        if cid and (proc.db.get(cid) or {}).get("status") != "erro":
             ids.append(cid)
     shutil.rmtree(work, ignore_errors=True)
     return ids
