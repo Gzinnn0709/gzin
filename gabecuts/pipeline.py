@@ -27,6 +27,26 @@ from .signals import audio_levels
 log = logging.getLogger(__name__)
 
 
+MUSICA_EXT = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac"}
+
+
+def escolher_musica(pasta: str, categoria: str = "") -> Path | None:
+    """Música de fundo opcional (use só músicas que você pode usar!).
+
+    Procura primeiro em <pasta>/<categoria> (ex.: musicas/engraçado), depois na própria pasta.
+    """
+    if not pasta:
+        return None
+    import random
+    base = Path(pasta)
+    for p in ((base / categoria) if categoria else None, base):
+        if p and p.is_dir():
+            arquivos = [f for f in p.iterdir() if f.suffix.lower() in MUSICA_EXT]
+            if arquivos:
+                return random.choice(arquivos)
+    return None
+
+
 def abrir_no_navegador(url: str) -> None:
     """Abre a live no navegador padrão (para ganhar os pontos/recompensas do canal)."""
     try:
@@ -154,30 +174,55 @@ class ClipProcessor:
             rv.trim_start, rv.trim_end = 0.0, duration
         final_dur = rv.trim_end - rv.trim_start
         lines = transcribe.shift(lines, rv.trim_start, final_dur)
-        srt = None
-        if lines:
-            srt = folder / "legenda.srt"
-            srt.write_text(transcribe.to_srt(lines), encoding="utf-8")
+        reacao = max(0.0, peak_offset - rv.trim_start)  # hora da reação dentro do corte final
 
-        # 5) vertical 9:16 (tenta com legenda+título; se falhar, sem eles)
+        # 4b) ritmo de TikTok: tira silêncios parados (sem fala E com som baixo)
+        if cfg.cut_silences and final_dur > 8:
+            palavras = [w for ln in lines for w in (ln.words or [])]
+            niveis = _try(lambda: audio_levels(final, bucket=0.1), "níveis de áudio") or []
+            keep = clipper.keep_intervals(niveis, palavras, final_dur)
+            if len(keep) > 1:
+                rapido = _try(lambda: clipper.cut_intervals(final, keep, folder / "corte_ritmo.mp4",
+                                                            cfg.video_crf, cfg.video_preset), "tirar silêncios")
+                if rapido:
+                    f = clipper.time_map(keep)
+                    novo_dur = sum(b - a for a, b in keep)
+                    log.info("Corte #%d: tirei %.1fs de silêncio", clip_id, final_dur - novo_dur)
+                    lines = transcribe.remap(lines, f, novo_dur)
+                    reacao = f(reacao) if f(reacao) is not None else min(reacao, novo_dur)
+                    if final != raw:
+                        _try(lambda: final.unlink(missing_ok=True), "limpeza")
+                    final, final_dur = rapido, novo_dur
+
+        subs = None
+        if lines:
+            (folder / "legenda.srt").write_text(transcribe.to_srt(lines), encoding="utf-8")
+            subs = folder / "legenda.ass"
+            subs.write_text(transcribe.to_ass(lines), encoding="utf-8")
+
+        # 5) vertical 9:16 estilo TikTok (tenta completo; se falhar, vai tirando os extras)
         vertical = None
         if cfg.vertical and status != "descartado":
             self.db.update(clip_id, description="Gerando versão vertical…")
-            for use_srt, use_title in ((cfg.burn_subtitles, True), (False, True), (False, False)):
+            musica = escolher_musica(cfg.music_dir, rv.category)
+            gancho = rv.gancho or rv.title
+            zoom = reacao if cfg.zoom_on_reaction else None
+            tentativas = ((cfg.burn_subtitles, True, zoom, musica), (cfg.burn_subtitles, True, None, None),
+                          (False, True, None, None), (False, False, None, None))
+            for use_subs, use_title, z, mus in tentativas:
                 try:
                     vertical = clipper.make_vertical(final, folder / "vertical.mp4",
-                                                     srt if use_srt else None,
-                                                     rv.title if use_title else None,
-                                                     cfg.video_crf, cfg.video_preset)
+                                                     subs if use_subs else None,
+                                                     gancho if use_title else None,
+                                                     cfg.video_crf, cfg.video_preset, zoom_at=z, music=mus)
                     break
                 except clipper.ClipError as e:
-                    log.warning("Vertical falhou (legenda=%s, título=%s): %s", use_srt, use_title,
-                                str(e)[-300:])
+                    log.warning("Vertical falhou (legenda=%s, gancho=%s, zoom=%s, música=%s): %s",
+                                use_subs, use_title, z is not None, mus is not None, str(e)[-300:])
         if final != raw:
-            thumb = _try(lambda: clipper.thumbnail(final, folder / "thumb.jpg",
-                                                   max(0.0, peak_offset - rv.trim_start)), "miniatura") or thumb
+            thumb = _try(lambda: clipper.thumbnail(final, folder / "thumb.jpg", reacao), "miniatura") or thumb
 
-        meta = dict(title=rv.title, description=rv.description, hashtags=rv.hashtags,
+        meta = dict(title=rv.title, gancho=rv.gancho, description=rv.description, hashtags=rv.hashtags,
                     category=rv.category, score=rv.score, reason=rv.reason, by_ai=rv.by_ai,
                     clip_start=t0 + rv.trim_start, clip_end=t0 + rv.trim_end, stats=m.stats,
                     transcript=transcript)

@@ -17,10 +17,10 @@ threshold = 3.0
 target_clips_per_hour = 12       # se ficar muito tempo sem corte, fica mais sensível sozinho (0 = desliga)
 threshold_floor = 1.8
 chat_delay = 4.0                 # segundos entre o acontecimento e a reação do chat
-pre_roll = 20.0                  # contexto antes do momento
+pre_roll = 12.0                  # contexto antes do momento (TikTok: gancho rápido)
 post_roll = 8.0
 min_clip_seconds = 15
-max_clip_seconds = 60
+max_clip_seconds = 45           # TikTok: 15–45 s retêm melhor
 
 # Pesos dos sinais
 w_chat = 1.0
@@ -31,7 +31,12 @@ w_audio = 0.7
 
 # Saída
 vertical = true                  # gera 9:16 para TikTok/Shorts/Reels
-burn_subtitles = true            # legenda queimada (precisa do faster-whisper)
+burn_subtitles = true            # legenda palavra por palavra, estilo TikTok (precisa do faster-whisper)
+cut_silences = true              # tira silêncios parados (ritmo mais rápido)
+zoom_on_reaction = true          # zoom rápido na hora da reação
+# music_dir = "musicas"          # pasta com músicas de fundo (subpastas por categoria: musicas/engraçado ...)
+                                 # use só músicas que você tem direito de usar; o melhor é pôr o som
+                                 # em alta pelo próprio TikTok na hora de postar
 whisper_model = "auto"           # auto (base na CPU, small com GPU), tiny/base/small/medium, ou "off"
 
 # IA (precisa de ANTHROPIC_API_KEY no ambiente)

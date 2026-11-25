@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ SCHEMA = {
         "keep": {"type": "boolean"},
         "score": {"type": "integer", "description": "0 a 100: potencial viral do corte"},
         "title": {"type": "string"},
+        "gancho": {"type": "string", "description": "texto curto em CAIXA ALTA para o topo do vídeo"},
         "description": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
         "category": {"type": "string", "enum": CATEGORIES},
@@ -29,7 +31,7 @@ SCHEMA = {
         "trim_end": {"type": "number", "description": "segundos a partir do início do trecho"},
         "reason": {"type": "string"},
     },
-    "required": ["keep", "score", "title", "description", "hashtags", "category",
+    "required": ["keep", "score", "title", "gancho", "description", "hashtags", "category",
                  "trim_start", "trim_end", "reason"],
     "additionalProperties": False,
 }
@@ -43,8 +45,13 @@ Critérios:
 reações exageradas, rage, sustos, jogadas absurdas, falas marcantes, interações engraçadas.
 - Descarte (keep=false) picos sem conteúdo: anúncio, sub/doação genérica, chat spammando sem \
 motivo aparente, trechos sem fala relevante.
-- trim_start/trim_end: recorte o trecho para começar logo antes do setup e terminar logo após a \
-reação principal. Mantenha entre 15 e 60 segundos, dentro da duração do trecho.
+- Estilo dos cortes que viralizam no TikTok: o gancho tem que aparecer nos primeiros 1–2 segundos.
+- trim_start: comece no máximo ~2 s antes da fala/ação que importa (sem enrolação de contexto, \
+a não ser que sem ele a piada não faça sentido). trim_end: termine logo depois da reação/punchline \
+principal, sem "rabo" (um final seco ajuda o vídeo a ser revisto em loop). Mire em 15–40 s; \
+nunca passe de 60 s nem saia da duração do trecho.
+- gancho: 2 a 5 palavras em CAIXA ALTA que dão vontade de ver até o fim, sem entregar o final \
+(ex.: "ELE NÃO ESPERAVA ISSO", "O CHAT FOI À LOUCURA"). Sem emojis.
 - Título em português do Brasil, curto (até 60 caracteres), chamativo, no estilo de canal de \
 cortes, sem inventar fatos que não estejam na transcrição ou no chat. Pode usar CAIXA ALTA em \
 uma ou duas palavras.
@@ -58,6 +65,7 @@ class Review:
     score: int
     title: str
     description: str
+    gancho: str = ""
     hashtags: list[str] = field(default_factory=list)
     category: str = "outro"
     trim_start: float = 0.0
@@ -76,7 +84,9 @@ def heuristic_review(duration: float, category: str, stats: dict, peak_score: fl
         "reação": "A reação do Gabe nesse momento",
     }
     score = int(max(0, min(100, 30 + peak_score * 6)))
-    return Review(keep=True, score=score,
+    ganchos = {"engraçado": "O CHAT NÃO AGUENTOU", "hype": "QUE MOMENTO INSANO",
+               "pedido do chat": "O CHAT PEDIU", "reação": "OLHA A REAÇÃO DELE"}
+    return Review(keep=True, score=score, gancho=ganchos.get(category, "OLHA ISSO"),
                   title=titles.get(category, "Momento da live do Gabepeixe"),
                   description="Corte automático da live do Gabepeixe.",
                   hashtags=["gabepeixe", "cortes", "twitch", "live"],
@@ -145,7 +155,9 @@ def ai_review(model: str, duration: float, transcript: str, chat_sample: list[st
     if te - ts < 8:  # ajuste inválido -> usa o trecho inteiro
         ts, te = 0.0, duration
     tags = [t.lstrip("#").strip().lower() for t in d["hashtags"] if t.strip()]
+    gancho = re.sub(r"[^\w\s!?.,À-ÿ-]", "", d.get("gancho", "")).strip().upper()[:40]
     return Review(keep=bool(d["keep"]), score=int(d["score"]), title=d["title"].strip()[:90],
+                  gancho=gancho,
                   description=d["description"].strip(), hashtags=tags[:8],
                   category=d["category"], trim_start=ts, trim_end=te,
                   reason=d["reason"].strip(), by_ai=True)

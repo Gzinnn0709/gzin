@@ -45,10 +45,10 @@ class Config:
     baseline_seconds: int = 300     # memória da média móvel (~5 min)
     min_unique_chatters: int = 3    # evita que um único spammer gere corte
     chat_delay: float = 4.0         # tempo médio entre o acontecimento e a reação do chat
-    pre_roll: float = 20.0          # contexto antes do momento
+    pre_roll: float = 12.0          # contexto antes do momento (TikTok: gancho rápido)
     post_roll: float = 8.0          # contexto depois do momento
     min_clip_seconds: float = 15.0
-    max_clip_seconds: float = 60.0
+    max_clip_seconds: float = 45.0  # cortes de TikTok: 15–45 s retêm melhor
     warmup_seconds: int = 60        # não corta antes de ter uma base estatística
 
     # Peso de cada sinal
@@ -60,7 +60,10 @@ class Config:
 
     # Saída de vídeo
     vertical: bool = True           # gera versão 9:16 (TikTok/Shorts/Reels)
-    burn_subtitles: bool = True
+    burn_subtitles: bool = True     # legenda palavra por palavra (estilo TikTok)
+    cut_silences: bool = True       # tira silêncios parados (ritmo mais rápido)
+    zoom_on_reaction: bool = True   # zoom rápido na hora da reação
+    music_dir: str = ""             # pasta com músicas de fundo (opcional; use só o que pode usar)
     video_crf: int = 23
     video_preset: str = "veryfast"
     encode_threads: int = 2         # núcleos usados pelo ffmpeg ao gerar cortes (deixa o PC livre)
