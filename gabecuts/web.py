@@ -195,6 +195,17 @@ $('#sitesave').onclick=async()=>{const b=$('#sitesave');b.disabled=true;$('#site
   const r=await fetch('/api/site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('#siteurl').value,codigo:$('#sitecod').value})});
   const j=await r.json();b.disabled=false;$('#sitemsg').textContent=r.ok?'✅ '+j.mensagem:'❌ '+(j.detail||'erro');site()};
 site();setInterval(site,15000);
+// Conexão automática: a página /cortes do site abre este painel com #conectar=<código>&site=<endereço>
+(async()=>{const h=new URLSearchParams(location.hash.slice(1));const cod=h.get('conectar');if(!cod)return;
+  history.replaceState(null,'',location.pathname); // tira o código da barra de endereço
+  const ban=document.createElement('div');ban.style.cssText='padding:14px 20px;background:#9147ff;color:#fff;font-weight:600';
+  ban.textContent='🌐 Conectando ao site…';document.body.insertBefore(ban,document.querySelector('main'));
+  try{const r=await fetch('/api/site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:h.get('site')||'',codigo:cod})});
+    const j=await r.json();
+    if(r.ok){ban.style.background='#00c853';ban.style.color='#000';ban.textContent='✅ Conectado ao site! Os cortes prontos vão aparecer sozinhos na página /cortes. Pode fechar esta aba.'}
+    else{ban.style.background='#eb0400';ban.textContent='❌ Não conectou: '+(j.detail||'erro')}
+  }catch(e){ban.style.background='#eb0400';ban.textContent='❌ Não conectou: '+e.message}
+  site()})();
 let tick=0;$('#f').onchange=()=>{window._last=null;load()};load();status();setInterval(status,3000);
 setInterval(()=>{tick++;if(window._busy||tick%5===0)load()},4000);
 </script></body></html>"""
