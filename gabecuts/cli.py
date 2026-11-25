@@ -16,7 +16,31 @@ from pathlib import Path
 from .config import load_config
 
 
+def ajustar_path() -> None:
+    """Garante que ffmpeg e streamlink sejam achados, mesmo logo depois de instalar.
+
+    * a pasta Scripts do ambiente (.venv) – onde fica o streamlink – nem sempre está no PATH
+      quando o GabeCuts é aberto pelo início automático do Windows;
+    * o FFmpeg instalado pelo winget fica em %LOCALAPPDATA%\Microsoft\WinGet\Links, que só entra
+      no PATH das janelas abertas depois da instalação.
+    """
+    import shutil
+    import sys
+    extras = [os.path.dirname(sys.executable)]
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "")
+        extras += [os.path.join(local, "Microsoft", "WinGet", "Links"),
+                   os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "cmd")]
+    atual = os.environ.get("PATH", "").split(os.pathsep)
+    novos = [p for p in extras if p and os.path.isdir(p) and p not in atual]
+    if novos:
+        os.environ["PATH"] = os.pathsep.join(novos + atual)
+    if not shutil.which("ffmpeg"):
+        logging.getLogger(__name__).error("FFmpeg não encontrado! Instale com: winget install Gyan.FFmpeg")
+
+
 def main(argv: list[str] | None = None) -> None:
+    ajustar_path()
     ap = argparse.ArgumentParser(prog="gabecuts", description="Cortes automáticos da live do Gabepeixe")
     ap.add_argument("--config", help="arquivo TOML (padrão: gabecuts.toml)")
     ap.add_argument("--channel", help="canal (padrão: gabepeixe)")
