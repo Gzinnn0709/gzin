@@ -1,0 +1,35 @@
+# Copie para gabecuts.toml e ajuste. Toda opção também pode ser passada por variável de
+# ambiente: GABECUTS_<NOME_EM_MAIUSCULAS>, ex: GABECUTS_THRESHOLD=5
+channel = "gabepeixe"
+stream_quality = "best"          # ou "1080p60", "720p60", "480p"...
+data_dir = "data"
+
+# Sensibilidade: maior = menos cortes, só os momentos mais fortes
+threshold = 4.0
+chat_delay = 4.0                 # segundos entre o acontecimento e a reação do chat
+pre_roll = 20.0                  # contexto antes do momento
+post_roll = 8.0
+min_clip_seconds = 15
+max_clip_seconds = 60
+
+# Pesos dos sinais
+w_chat = 1.0
+w_laugh = 1.5
+w_hype = 1.0
+w_clip_call = 1.5
+w_audio = 0.7
+
+# Saída
+vertical = true                  # gera 9:16 para TikTok/Shorts/Reels
+burn_subtitles = true            # legenda queimada (precisa do faster-whisper)
+whisper_model = "small"          # tiny/base/small/medium/large-v3
+
+# IA (precisa de ANTHROPIC_API_KEY no ambiente)
+ai_enabled = true
+ai_model = "claude-opus-5-5"
+ai_min_score = 50
+
+# Avisos no Discord quando sair corte novo
+discord_webhook_url = ""
+public_base_url = ""
+web_port = 8000

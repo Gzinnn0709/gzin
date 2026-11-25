@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gabecuts"
+version = "0.1.0"
+description = "Cortes automáticos e inteligentes da live do Gabepeixe (Twitch)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "anthropic>=2.0",
+  "streamlink>=6.0",
+  "numpy>=1.24",
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "httpx>=0.27",
+  "websockets>=13",
+]
+
+[project.optional-dependencies]
+whisper = ["faster-whisper>=1.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+gabecuts = "gabecuts.cli:main"
+
+[tool.setuptools]
+packages = ["gabecuts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

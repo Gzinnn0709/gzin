@@ -1,0 +1,12 @@
+services:
+  gabecuts:
+    build: .
+    restart: unless-stopped
+    command: ["live"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./gabecuts.toml:/app/gabecuts.toml:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
