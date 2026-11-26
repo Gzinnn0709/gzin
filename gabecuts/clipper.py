@@ -103,7 +103,7 @@ def make_vertical(src: Path, out: Path, subs: Path | None = None, title: str | N
         z0, z1 = max(zoom_at - 0.15, 0.0), zoom_at + 1.6
         fg += (",split=2[fgn][fgz0];[fgz0]scale=1274:718,crop=1080:608[fgz];"
                f"[fgn][fgz]overlay=0:0:enable='between(t,{z0:.2f},{z1:.2f})'")
-    vf = ("[0:v]split=2[a][b];"
+    vf = ("[0:v]fps=30,split=2[a][b];"
           "[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,"
           "eq=brightness=-0.08[bg];"
           + fg + "[fg];"
@@ -210,12 +210,12 @@ def cut_intervals(src: Path, out: Path, keep: list[tuple[float, float]], crf: in
 def web_version(src: Path, out: Path, vertical: bool = True) -> Path:
     """Versão para o site (cabe no plano grátis sem ficar borrada).
 
-    720x1280, 30 fps (sobra mais qualidade para cada quadro), CRF 23 com preset "medium"
-    (comprime melhor que o veryfast), teto de 2 Mbps e áudio 128k: ~6-15 MB por corte de 1 a 2 min.
+    720x1280, 30 fps (sobra mais qualidade para cada quadro), CRF 23 com preset "veryfast"
+    (rápido mesmo em notebook fraco gravando a live), teto de 2 Mbps e áudio 128k: ~6-15 MB por corte de 1 a 2 min.
     """
     scale = "scale=720:-2:flags=lanczos" if vertical else "scale=-2:720:flags=lanczos"
     _run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", f"{scale},fps=30", "-c:v", "libx264",
-          "-preset", "medium", "-crf", "23", "-maxrate", "2000k", "-bufsize", "4000k",
+          "-preset", "veryfast", "-crf", "23", "-maxrate", "2000k", "-bufsize", "4000k",
           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)])
     return out
 

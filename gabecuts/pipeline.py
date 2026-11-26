@@ -310,6 +310,7 @@ class LiveRunner:
     async def run(self) -> None:
         loops = {"chat": self._chat_loop, "live": self._live_loop, "segmentos": self._segment_loop,
                  "detecção": self._detect_loop, "cortes": self._clip_worker, "site": self._site_loop,
+                 "sinal": self._status_loop,
                  "clipes da kick": self._kick_clips_loop, "lives passadas": self._vod_loop}
         await asyncio.gather(*(self._supervisionar(n, f) for n, f in loops.items()))
 
@@ -389,16 +390,21 @@ class LiveRunner:
             await asyncio.sleep(10)
 
     async def _site_loop(self) -> None:
-        """Manda os cortes prontos e a situação para a página /cortes do site (se conectado).
-
-        A cada minuto também pergunta se alguém pediu "Cortar agora" pela página.
-        """
-        ultimo_status = 0.0
+        """Envia os cortes prontos para o site. Roda separado do sinal: um nunca trava o outro."""
         while True:
             try:
                 await asyncio.to_thread(self.site.sync)
-                # durante a live: a cada minuto. Fora dela: a cada 30 min, para o Render grátis
-                # poder dormir (o plano grátis tem horas limitadas por mês)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Envio para o site: %s", str(e)[:200])
+            await asyncio.sleep(15)
+
+    async def _status_loop(self) -> None:
+        """Manda a situação para a página /cortes e recebe os pedidos de lá
+        ("Cortar agora", lives passadas). Durante a live ou um VOD: a cada minuto. Fora: a cada
+        20 min, para o Render grátis poder dormir (o plano grátis tem horas limitadas por mês)."""
+        ultimo_status = 0.0
+        while True:
+            try:
                 ocupado = self.live or (self.vod_status and not str(self.vod_status.get("etapa", "")).startswith(("pronto", "erro")))
                 if time.time() - ultimo_status >= (60 if ocupado else 1200):
                     ultimo_status = time.time()
@@ -406,7 +412,7 @@ class LiveRunner:
                                  canal=f"{self.cfg.platform}:{self.cfg.channel_for(self.cfg.platform)}",
                                  fila=self.queue.qsize(), mensagens=self.stats["messages"],
                                  momentos=self.stats["moments"], avisos=list(AVISOS.itens),
-                                 vod=self.vod_status)
+                                 vod=self.vod_status, enviando=self.site.status().get("pendentes"))
                     resposta = await asyncio.to_thread(site.enviar_status, self.cfg, dados)
                     segundos = resposta.get("cortar_agora") or 0
                     if segundos and self.live:
@@ -419,7 +425,8 @@ class LiveRunner:
                             log.warning("Link de live passada inválido: %s", e)
             except Exception as e:  # noqa: BLE001
                 log.warning("Site: %s", str(e)[:200])
-            await asyncio.sleep(20)
+            await asyncio.sleep(10)
+
 
     async def _chat_loop(self) -> None:
         async for msg in read_all_chats(self.cfg):
