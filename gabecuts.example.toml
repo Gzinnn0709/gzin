@@ -34,6 +34,7 @@ vertical = true                  # gera 9:16 para TikTok/Shorts/Reels
 burn_subtitles = true            # legenda palavra por palavra, estilo TikTok (precisa do faster-whisper)
 cut_silences = false             # tira silêncios parados (em jogo parece "travada"; ligue só se quiser)
 zoom_on_reaction = true          # zoom rápido na hora da reação
+hook_text = false                # texto de gancho em cima do vídeo (true para ligar)
 # music_dir = "musicas"          # pasta com músicas de fundo (subpastas por categoria: musicas/engraçado ...)
                                  # use só músicas que você tem direito de usar; o melhor é pôr o som
                                  # em alta pelo próprio TikTok na hora de postar

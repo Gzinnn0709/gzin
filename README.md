@@ -145,7 +145,7 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 Os cortes verticais seguem o que funciona nos cortes de streamer que viralizam:
 
 - **Gancho rápido:** a IA corta para começar no máximo uns 2 segundos antes do momento e terminar seco, logo depois da reação, o que ajuda o vídeo a ser revisto em loop. O alvo é 15 a 40 segundos.
-- **Texto de gancho no topo:** 2 a 5 palavras em caixa alta, por exemplo "ELE NÃO ESPERAVA ISSO".
+- **Texto de gancho no topo (desligado por padrão):** com `hook_text = true`, aparecem 2 a 5 palavras em caixa alta no topo, por exemplo "ELE NÃO ESPERAVA ISSO". O título continua no site e no painel.
 - **Legenda palavra por palavra:** caixa alta, fonte grossa e a palavra falada em amarelo. É gerada em `legenda.ass`, e a `legenda.srt` continua sendo gerada.
 - **Ritmo (desligado por padrão):** `cut_silences = true` tira os silêncios parados. Em vídeo de jogo, os cortes no meio da conversa parecem "travadas", por isso vem desligado.
 - **Zoom rápido** na hora da reação.

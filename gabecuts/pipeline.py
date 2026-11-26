@@ -224,7 +224,7 @@ class ClipProcessor:
         if cfg.vertical and status != "descartado":
             self.db.update(clip_id, description="Gerando versão vertical…")
             musica = escolher_musica(cfg.music_dir, rv.category)
-            gancho = rv.gancho or rv.title
+            gancho = (rv.gancho or rv.title) if cfg.hook_text else None
             zoom = reacao if cfg.zoom_on_reaction else None
             tentativas = ((cfg.burn_subtitles, True, zoom, musica), (cfg.burn_subtitles, True, None, None),
                           (False, True, None, None), (False, False, None, None))

@@ -64,6 +64,7 @@ class Config:
     cut_silences: bool = False      # tira silêncios parados. Desligado: em vídeo de jogo os cortes
                                     # no meio da conversa parecem "travadas" (pulos na imagem)
     zoom_on_reaction: bool = True   # zoom rápido na hora da reação
+    hook_text: bool = False         # texto de gancho em cima do vídeo (ex.: "O CHAT NÃO AGUENTOU")
     music_dir: str = ""             # pasta com músicas de fundo (opcional; use só o que pode usar)
     video_crf: int = 23
     video_preset: str = "veryfast"
