@@ -61,7 +61,8 @@ class Config:
     # Saída de vídeo
     vertical: bool = True           # gera versão 9:16 (TikTok/Shorts/Reels)
     burn_subtitles: bool = True     # legenda palavra por palavra (estilo TikTok)
-    cut_silences: bool = True       # tira silêncios parados (ritmo mais rápido)
+    cut_silences: bool = False      # tira silêncios parados. Desligado: em vídeo de jogo os cortes
+                                    # no meio da conversa parecem "travadas" (pulos na imagem)
     zoom_on_reaction: bool = True   # zoom rápido na hora da reação
     music_dir: str = ""             # pasta com músicas de fundo (opcional; use só o que pode usar)
     video_crf: int = 23

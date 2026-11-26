@@ -147,11 +147,11 @@ Os cortes verticais seguem o que funciona nos cortes de streamer que viralizam:
 - **Gancho rápido:** a IA corta para começar no máximo uns 2 segundos antes do momento e terminar seco, logo depois da reação, o que ajuda o vídeo a ser revisto em loop. O alvo é 15 a 40 segundos.
 - **Texto de gancho no topo:** 2 a 5 palavras em caixa alta, por exemplo "ELE NÃO ESPERAVA ISSO".
 - **Legenda palavra por palavra:** caixa alta, fonte grossa e a palavra falada em amarelo. É gerada em `legenda.ass`, e a `legenda.srt` continua sendo gerada.
-- **Ritmo:** os silêncios parados saem. Só sai trecho sem fala **e** com som baixo, para não cortar um susto ou uma jogada.
+- **Ritmo (desligado por padrão):** `cut_silences = true` tira os silêncios parados. Em vídeo de jogo, os cortes no meio da conversa parecem "travadas", por isso vem desligado.
 - **Zoom rápido** na hora da reação.
 - **Música opcional** (`music_dir`): fica baixinha e abaixa sozinha quando alguém fala. O recomendado é pôr o **som em alta pelo próprio app do TikTok** na hora de postar: ajuda o alcance e evita problema de direitos autorais.
 
-Tudo isso pode ser desligado no `gabecuts.toml` (`cut_silences`, `zoom_on_reaction`, `burn_subtitles`).
+Tudo isso pode ser ligado ou desligado no `gabecuts.toml` (`cut_silences`, `zoom_on_reaction`, `burn_subtitles`).
 
 ## Ajuste fino
 

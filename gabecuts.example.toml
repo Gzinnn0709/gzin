@@ -32,7 +32,7 @@ w_audio = 0.7
 # Saída
 vertical = true                  # gera 9:16 para TikTok/Shorts/Reels
 burn_subtitles = true            # legenda palavra por palavra, estilo TikTok (precisa do faster-whisper)
-cut_silences = true              # tira silêncios parados (ritmo mais rápido)
+cut_silences = false             # tira silêncios parados (em jogo parece "travada"; ligue só se quiser)
 zoom_on_reaction = true          # zoom rápido na hora da reação
 # music_dir = "musicas"          # pasta com músicas de fundo (subpastas por categoria: musicas/engraçado ...)
                                  # use só músicas que você tem direito de usar; o melhor é pôr o som
