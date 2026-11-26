@@ -208,11 +208,15 @@ def cut_intervals(src: Path, out: Path, keep: list[tuple[float, float]], crf: in
 
 
 def web_version(src: Path, out: Path, vertical: bool = True) -> Path:
-    """Versão leve para o site (cabe no plano grátis): 720p, CRF 28, áudio 96k (~3-5 MB/corte)."""
-    scale = "scale=720:-2" if vertical else "scale=-2:720"
-    _run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", scale, "-c:v", "libx264",
-          "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
-          "-movflags", "+faststart", str(out)])
+    """Versão para o site (cabe no plano grátis sem ficar borrada).
+
+    720x1280, 30 fps (sobra mais qualidade para cada quadro), CRF 23 com preset "medium"
+    (comprime melhor que o veryfast), teto de 2,5 Mbps e áudio 128k: ~4-8 MB por corte de 45 s.
+    """
+    scale = "scale=720:-2:flags=lanczos" if vertical else "scale=-2:720:flags=lanczos"
+    _run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", f"{scale},fps=30", "-c:v", "libx264",
+          "-preset", "medium", "-crf", "23", "-maxrate", "2500k", "-bufsize", "5000k",
+          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)])
     return out
 
 
