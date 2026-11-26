@@ -18,7 +18,7 @@ PLATFORMS = ("twitch", "kick")
 class Config:
     # Canal e plataforma
     channel: str = "gabepeixe"
-    platform: str = "twitch"        # de onde vem o VÍDEO: "twitch" ou "kick"
+    platform: str = "kick"          # de onde vem o VÍDEO: "kick" (Gabepeixe) ou "twitch"
     chat_sources: str = ""          # chats lidos, separados por vírgula (padrão: a plataforma).
                                     # Em multistream use "twitch,kick" para somar os dois chats.
     twitch_channel: str = ""        # se o nome do canal for diferente em cada plataforma
@@ -37,18 +37,19 @@ class Config:
     live_check_interval: int = 60
 
     # Detecção de momentos
-    threshold: float = 3.0          # score mínimo para abrir um momento (maior = menos cortes)
-    target_clips_per_hour: int = 12 # se ficar muito tempo sem corte, o limiar desce sozinho (0 = desliga)
-    threshold_floor: float = 1.8    # limite mínimo dessa descida
+    threshold: float = 4.5          # score mínimo para abrir um momento (maior = menos cortes, mais fortes)
+    target_clips_per_hour: int = 6  # se ficar muito tempo sem corte, o limiar desce sozinho (0 = desliga)
+    threshold_floor: float = 3.2    # limite mínimo dessa descida (não deixa sair corte "sem sentido")
     window_seconds: int = 5         # janela deslizante de análise
-    analysis_lag: int = 30          # atraso da análise (espera o áudio do segmento ficar pronto)
+    analysis_lag: int = 60          # atraso da análise (espera o áudio e os clipes da Kick chegarem)
     baseline_seconds: int = 300     # memória da média móvel (~5 min)
     min_unique_chatters: int = 3    # evita que um único spammer gere corte
     chat_delay: float = 4.0         # tempo médio entre o acontecimento e a reação do chat
-    pre_roll: float = 12.0          # contexto antes do momento (TikTok: gancho rápido)
-    post_roll: float = 8.0          # contexto depois do momento
-    min_clip_seconds: float = 15.0
-    max_clip_seconds: float = 45.0  # cortes de TikTok: 15–45 s retêm melhor
+    pre_roll: float = 30.0          # contexto antes do momento (o corte precisa fazer sentido sozinho)
+    post_roll: float = 15.0         # contexto depois do momento (reação completa)
+    min_clip_seconds: float = 40.0  # cortes de 40 s a 2 min
+    max_clip_seconds: float = 120.0
+    merge_gap: float = 25.0         # momentos a menos de 25 s um do outro viram um corte só
     warmup_seconds: int = 60        # não corta antes de ter uma base estatística
 
     # Peso de cada sinal
@@ -57,6 +58,8 @@ class Config:
     w_hype: float = 1.0
     w_clip_call: float = 1.5
     w_audio: float = 0.7
+    w_kick_clip: float = 1.6        # cada clipe criado por espectadores na Kick (perto do momento)
+    kick_clips_poll: int = 30       # de quantos em quantos segundos olha os clipes novos da Kick
 
     # Saída de vídeo
     vertical: bool = True           # gera versão 9:16 (TikTok/Shorts/Reels)

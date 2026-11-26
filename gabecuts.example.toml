@@ -1,7 +1,7 @@
 # Copie para gabecuts.toml e ajuste. Toda opção também pode ser passada por variável de
 # ambiente: GABECUTS_<NOME_EM_MAIUSCULAS>, ex: GABECUTS_THRESHOLD=5
 channel = "gabepeixe"
-platform = "twitch"              # de onde vem o VÍDEO: "twitch" ou "kick"
+platform = "kick"                # de onde vem o VÍDEO: "kick" (Gabepeixe) ou "twitch"
 # chat_sources = "twitch,kick"   # multistream: soma os chats das duas plataformas
 # twitch_channel = ""            # se o nome do canal mudar de uma plataforma para outra
 # kick_channel = ""

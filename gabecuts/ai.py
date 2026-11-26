@@ -37,7 +37,7 @@ SCHEMA = {
 }
 
 SYSTEM = """Você é o editor-chefe de um canal de cortes da live do Gabepeixe (streamer brasileiro \
-da Twitch). Um detector automático encontrou um possível momento a partir de picos no chat e no \
+que faz live na Kick). Um detector automático encontrou um possível momento a partir de picos no chat e no \
 áudio. Seu trabalho é decidir se isso vira um corte bom para TikTok/Shorts/Reels e prepará-lo.
 
 Critérios:
@@ -45,17 +45,18 @@ Critérios:
 reações exageradas, rage, sustos, jogadas absurdas, falas marcantes, interações engraçadas.
 - Descarte (keep=false) picos sem conteúdo: anúncio, sub/doação genérica, chat spammando sem \
 motivo aparente, trechos sem fala relevante.
-- Estilo dos cortes que viralizam no TikTok: o gancho tem que aparecer nos primeiros 1–2 segundos.
-- trim_start: comece no máximo ~2 s antes da fala/ação que importa (sem enrolação de contexto, \
-a não ser que sem ele a piada não faça sentido). trim_end: termine logo depois da reação/punchline \
-principal, sem "rabo" (um final seco ajuda o vídeo a ser revisto em loop). Mire em 15–40 s; \
-nunca passe de 60 s nem saia da duração do trecho.
+- O corte precisa fazer sentido sozinho para quem não viu a live: começo (contexto/setup), meio e \
+fim (reação/punchline). Descarte (keep=false) trechos confusos, sem história ou sem graça.
+- trim_start/trim_end: comece no início da situação (o suficiente para entender o que está \
+acontecendo) e termine logo depois da reação principal. Duração entre 40 s e 2 min — mire em \
+50 s a 1 min 30 s. Nunca deixe com menos de 40 s nem saia da duração do trecho.
 - gancho: 2 a 5 palavras em CAIXA ALTA que dão vontade de ver até o fim, sem entregar o final \
 (ex.: "ELE NÃO ESPERAVA ISSO", "O CHAT FOI À LOUCURA"). Sem emojis.
 - Título em português do Brasil, curto (até 60 caracteres), chamativo, no estilo de canal de \
 cortes, sem inventar fatos que não estejam na transcrição ou no chat. Pode usar CAIXA ALTA em \
 uma ou duas palavras.
-- Descrição: 1-2 frases. Hashtags: 3 a 6, sem '#', minúsculas, incluindo gabepeixe.
+- Descrição: 1-2 frases. Hashtags: 3 a 6, sem '#', minúsculas, incluindo gabepeixe e kick \
+(ele faz live na Kick, nunca use twitch).
 - Se não houver transcrição, julgue pelo chat e pelas métricas, com nota mais conservadora."""
 
 
@@ -80,16 +81,18 @@ def heuristic_review(duration: float, category: str, stats: dict, peak_score: fl
         "engraçado": "O CHAT NÃO AGUENTOU de tanto rir",
         "hype": "Que momento INSANO na live",
         "pedido do chat": "O chat pediu e o corte veio",
+        "clipado na kick": "O momento que todo mundo clipou",
         "manual": "Momento da live do Gabepeixe",
         "reação": "A reação do Gabe nesse momento",
     }
     score = int(max(0, min(100, 30 + peak_score * 6)))
     ganchos = {"engraçado": "O CHAT NÃO AGUENTOU", "hype": "QUE MOMENTO INSANO",
+               "clipado na kick": "TODO MUNDO CLIPOU ISSO",
                "pedido do chat": "O CHAT PEDIU", "reação": "OLHA A REAÇÃO DELE"}
     return Review(keep=True, score=score, gancho=ganchos.get(category, "OLHA ISSO"),
                   title=titles.get(category, "Momento da live do Gabepeixe"),
                   description="Corte automático da live do Gabepeixe.",
-                  hashtags=["gabepeixe", "cortes", "twitch", "live"],
+                  hashtags=["gabepeixe", "cortes", "kick", "live"],
                   category=category,
                   trim_start=0.0, trim_end=duration, reason="modo heurístico (sem IA)")
 
@@ -152,9 +155,12 @@ def ai_review(model: str, duration: float, transcript: str, chat_sample: list[st
 
     ts = max(0.0, min(float(d["trim_start"]), duration))
     te = max(0.0, min(float(d["trim_end"]), duration))
-    if te - ts < 8:  # ajuste inválido -> usa o trecho inteiro
+    if te - ts < min(40.0, duration * 0.8):  # corte curto demais -> usa o trecho inteiro
         ts, te = 0.0, duration
     tags = [t.lstrip("#").strip().lower() for t in d["hashtags"] if t.strip()]
+    tags = [t for t in tags if t != "twitch"]
+    if "kick" not in tags:
+        tags.append("kick")
     gancho = re.sub(r"[^\w\s!?.,À-ÿ-]", "", d.get("gancho", "")).strip().upper()[:40]
     return Review(keep=bool(d["keep"]), score=int(d["score"]), title=d["title"].strip()[:90],
                   gancho=gancho,

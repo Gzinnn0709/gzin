@@ -109,6 +109,34 @@ def is_live(slug: str) -> tuple[bool, str | None]:
         return False, None
 
 
+CLIPS_API = "https://kick.com/api/v2/channels/{slug}/clips?cursor=0&sort=date&time=day"
+
+
+def parse_clips(data) -> list[dict]:
+    """Clipes do canal: [{id, ts (epoch de quando foi criado), duracao, views, titulo}]."""
+    if isinstance(data, dict):
+        itens = data.get("clips") or data.get("data") or []
+    else:
+        itens = data or []
+    out = []
+    for c in itens if isinstance(itens, list) else []:
+        cid, criado = c.get("id"), c.get("created_at")
+        if not cid or not criado:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(criado).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        out.append({"id": str(cid), "ts": ts, "duracao": c.get("duration"), "views": c.get("views"),
+                    "titulo": c.get("title") or ""})
+    return out
+
+
+def recent_clips(slug: str) -> list[dict]:
+    """Clipes mais recentes que os espectadores criaram no canal (mais novos primeiro)."""
+    return parse_clips(_get_json(CLIPS_API.format(slug=slug)))
+
+
 def pusher_config(channel_id: int | None) -> tuple[str, str]:
     """Pega a chave/cluster do Pusher que o site da Kick está usando; usa o padrão se falhar."""
     if channel_id:

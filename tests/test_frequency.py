@@ -30,7 +30,7 @@ def test_adaptive_threshold_finds_moment_in_calm_live():
 
 
 def test_threshold_resets_after_moment():
-    det = MomentDetector(Config(analysis_lag=0, target_clips_per_hour=12, threshold=3.0))
+    det = MomentDetector(Config(analysis_lag=0, target_clips_per_hour=12, threshold=3.0, threshold_floor=1.8))
     det.first_t = 0
     assert det.current_threshold(100) == 3.0
     assert det.current_threshold(60 + 300 + 150) < 3.0

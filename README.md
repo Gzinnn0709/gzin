@@ -25,6 +25,8 @@ O GabeCuts fica de olho no canal do Gabepeixe na **Twitch** ou na **Kick** (ou n
 
 ## Como o "inteligente" funciona
 
+0. **Clipes da Kick:** durante a live, a cada 30 s o GabeCuts olha os clipes que os espectadores criam no canal. Quando várias pessoas clipam o mesmo momento, isso vira um sinal forte, e o corte sai mesmo que o chat não tenha explodido.
+
 1. **Linha de base dinâmica.** O sistema não usa números fixos como "50 mensagens por segundo". Ele aprende o ritmo normal do chat e do áudio nos últimos ~5 minutos e mede o quanto cada segundo foge disso (z-score). Assim funciona igual com o chat calmo do começo da live ou com 40 mil pessoas num pico.
 2. **O que o chat diz conta.** Uma onda de `KKKKKK`, `KEKW` ou `ICANT` pesa como risada. `POG`, `CARALHO`, `MDS` e `NOOO` pesam como hype. Pedidos de "clipa" e "corta" somam pontos, e uma onda de copypasta ou emote repetido reforça o sinal.
 3. **Uma pessoa não decide sozinha.** Cada usuário conta no máximo 2 mensagens por janela, então um spammer sozinho não gera corte.
@@ -144,7 +146,7 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 
 Os cortes verticais seguem o que funciona nos cortes de streamer que viralizam:
 
-- **Gancho rápido:** a IA corta para começar no máximo uns 2 segundos antes do momento e terminar seco, logo depois da reação, o que ajuda o vídeo a ser revisto em loop. O alvo é 15 a 40 segundos.
+- **Cortes com história:** de 40 s a 2 min (o alvo é 50 s a 1 min 30 s), com contexto antes do momento e a reação completa. Momentos a menos de 25 s um do outro viram um corte só.
 - **Texto de gancho no topo (desligado por padrão):** com `hook_text = true`, aparecem 2 a 5 palavras em caixa alta no topo, por exemplo "ELE NÃO ESPERAVA ISSO". O título continua no site e no painel.
 - **Legenda palavra por palavra:** caixa alta, fonte grossa e a palavra falada em amarelo. É gerada em `legenda.ass`, e a `legenda.srt` continua sendo gerada.
 - **Ritmo (desligado por padrão):** `cut_silences = true` tira os silêncios parados. Em vídeo de jogo, os cortes no meio da conversa parecem "travadas", por isso vem desligado.

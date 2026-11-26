@@ -58,7 +58,7 @@ def test_detects_laugh_burst_with_context():
     # o corte começa antes da reação do chat e cobre o pico
     assert m.clip_start < 300 - Config().chat_delay
     assert m.clip_end > 300
-    assert 15 <= m.duration <= 60
+    assert 40 <= m.duration <= 120
 
 
 def test_single_spammer_does_not_trigger():
@@ -164,3 +164,33 @@ def test_parte_com_erro_reinicia_sozinha(monkeypatch, tmp_path):
     except asyncio.CancelledError:
         pass
     assert len(chamadas) == 2  # deu erro, reiniciou, e só parou quando foi cancelado
+
+
+
+def _laugh(det, t0, t1, n=25):
+    for t in range(t0, t1):
+        for i in range(n):
+            det.add_message(ChatMessage(t + i / n, f"r{i}_{t}", "KKKKKKKKKK"))
+
+
+def test_cortes_tem_no_minimo_40s_e_momentos_perto_viram_um_so():
+    det = MomentDetector(_cfg())
+    _feed_normal(det, 0, 600)
+    _laugh(det, 300, 306)          # dois momentos com ~30 s entre eles: uma história só
+    _laugh(det, 345, 350)
+    _laugh(det, 520, 526)          # outro bem depois: corte separado
+    ms = det.tick(600) + det.flush()
+    assert len(ms) == 2
+    assert all(m.duration >= 40 for m in ms)
+    assert ms[0].clip_start < 300 and ms[0].clip_end > 345 and ms[0].stats.get("juntados") == 2
+    assert ms[0].duration <= 120
+
+
+def test_clipes_da_kick_viram_momento_mesmo_com_chat_normal():
+    det = MomentDetector(_cfg())
+    _feed_normal(det, 0, 400)
+    for k in range(4):              # 4 espectadores clipando o mesmo momento
+        det.add_kick_clip(250 + k * 3)
+    ms = det.tick(400) + det.flush()
+    assert len(ms) == 1 and ms[0].category == "clipado na kick"
+    assert ms[0].clip_start < 250 < ms[0].clip_end

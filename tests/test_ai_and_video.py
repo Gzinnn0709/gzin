@@ -19,7 +19,7 @@ def test_ai_review_parses_structured_output(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "teste")
     payload = {"keep": True, "score": 87, "title": "Gabe TOMA SUSTO no meio da run",
                "description": "Susto clássico.", "hashtags": ["#Gabepeixe", "susto"],
-               "category": "susto", "trim_start": 3.0, "trim_end": 33.0, "reason": "reação forte"}
+               "category": "susto", "trim_start": 3.0, "trim_end": 58.0, "reason": "reação forte"}
     calls = {}
 
     class FakeMessages:
@@ -34,10 +34,14 @@ def test_ai_review_parses_structured_output(monkeypatch):
 
     import anthropic
     monkeypatch.setattr(anthropic, "Anthropic", FakeClient)
-    rv = ai.ai_review("claude-opus-5-5", 40.0, "[0.0s] oi", ["[1.0] a: KKKK"], {}, "engraçado", 20.0, 9.0)
+    rv = ai.ai_review("claude-opus-5-5", 70.0, "[0.0s] oi", ["[1.0] a: KKKK"], {}, "engraçado", 20.0, 9.0)
     assert rv.by_ai and rv.score == 87 and rv.category == "susto"
-    assert rv.hashtags == ["gabepeixe", "susto"]
-    assert (rv.trim_start, rv.trim_end) == (3.0, 33.0)
+    assert rv.hashtags == ["gabepeixe", "susto", "kick"]   # sempre kick, nunca twitch
+    assert (rv.trim_start, rv.trim_end) == (3.0, 58.0)
+    # corte curto demais (< 40 s) sugerido pela IA: mantém o trecho inteiro
+    payload.update(trim_start=10.0, trim_end=30.0)
+    rv2 = ai.ai_review("claude-opus-5-5", 70.0, "", [], {}, "hype", 20.0, 9.0)
+    assert (rv2.trim_start, rv2.trim_end) == (0.0, 70.0)
     assert calls["model"] == "claude-opus-5-5"
     assert calls["output_config"]["format"]["type"] == "json_schema"
 

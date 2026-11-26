@@ -38,6 +38,7 @@ class Bucket:
     user_clips: Counter = field(default_factory=Counter)
     spam: Counter = field(default_factory=Counter)
     audio_db: float | None = None
+    kick_clips: int = 0          # clipes criados pelos espectadores na Kick neste segundo
 
 # máximo de mensagens de um mesmo usuário que contam dentro de uma janela
 PER_USER_CAP = 2
@@ -109,6 +110,7 @@ class MomentDetector:
         self.last_clip_end: float = 0.0
         self.last_moment_t: float | None = None
         self.recent_scores: deque = deque(maxlen=600)  # (t, score, componentes) para o painel
+        self.pendente: Moment | None = None  # momento esperando para ver se junta com o próximo
 
     # --- entrada de dados ------------------------------------------------
     def add_message(self, msg: ChatMessage) -> None:
@@ -134,6 +136,16 @@ class MomentDetector:
             self.buckets[t].audio_db = db
             if self.first_t is None or t < self.first_t:
                 self.first_t = t
+
+    def add_kick_clip(self, ts: float) -> None:
+        """Um espectador criou um clipe na Kick: sinal forte de que aquilo foi um bom momento."""
+        t = int(ts)
+        self.buckets[t].kick_clips += 1
+        if self.first_t is None or t < self.first_t:
+            self.first_t = t
+
+    def _kick_clips_perto(self, t: int, janela: int = 30) -> int:
+        return sum(self.buckets[s].kick_clips for s in range(t - janela + 1, t + 1) if s in self.buckets)
 
     # --- avaliação -------------------------------------------------------
     def _window(self, t: int) -> dict:
@@ -185,10 +197,14 @@ class MomentDetector:
             z_audio = self.audio.z(win["audio_db"], min_std=2.0)
             audio = c.w_audio * max(0.0, z_audio)
 
-        score = chat + clip + audio
+        n_kick = self._kick_clips_perto(t)
+        kick = c.w_kick_clip * min(n_kick, 4)
+
+        score = chat + clip + audio + kick
         comps = dict(win, z_rate=round(z_rate, 2), z_audio=round(z_audio, 2),
                      laugh_frac=round(laugh_frac, 2), hype_frac=round(hype_frac, 2),
-                     chat=round(chat, 2), clip=round(clip, 2), audio=round(audio, 2))
+                     chat=round(chat, 2), clip=round(clip, 2), audio=round(audio, 2),
+                     kick_clips=n_kick, kick=round(kick, 2))
         return score, comps
 
     def _update_baselines(self, t: int) -> None:
@@ -209,19 +225,22 @@ class MomentDetector:
         while self.cursor < target:
             self.cursor += 1
             t = self.cursor
-            m = self._step(t)
-            if m:
-                out.append(m)
+            out.extend(self._step(t))
         self._gc(target)
         return out
 
     def flush(self) -> list[Moment]:
-        """Fecha o momento aberto (fim da live / fim do arquivo)."""
+        """Fecha o momento aberto e solta o que estava esperando (fim da live / do arquivo)."""
+        out = []
         if self.open:
             m = self._close(self.open)
             self.open = None
-            return [m] if m else []
-        return []
+            if m:
+                out.extend(self._juntar(m))
+        if self.pendente:
+            out.append(self.pendente)
+            self.pendente = None
+        return out
 
     def current_threshold(self, t: float) -> float:
         """Limiar adaptativo: se passar muito tempo sem corte, fica mais sensível aos poucos.
@@ -241,7 +260,7 @@ class MomentDetector:
         frac = min(1.0, (idle - interval) / interval)
         return c.threshold - (c.threshold - min(c.threshold_floor, c.threshold)) * frac
 
-    def _step(self, t: int) -> Moment | None:
+    def _step(self, t: int) -> list[Moment]:
         c = self.cfg
         score, comps = self.score_second(t)
         thr = self.current_threshold(t)
@@ -250,7 +269,7 @@ class MomentDetector:
         warm = self.first_t is not None and t - self.first_t >= c.warmup_seconds
         above = warm and score >= thr
 
-        result = None
+        result: list[Moment] = []
         if self.open is None:
             # só não abre um momento cuja reação ainda está dentro do corte anterior
             if above and t - c.chat_delay >= self.last_clip_end:
@@ -261,20 +280,50 @@ class MomentDetector:
             o.scores.append(score)
             b = self.buckets.get(t)
             if b is not None:
-                o.totals.update(msgs=b.msgs, laughs=b.laughs, hype=b.hype, clip_calls=b.clip_calls)
+                o.totals.update(msgs=b.msgs, laughs=b.laughs, hype=b.hype, clip_calls=b.clip_calls,
+                                kick_clips=b.kick_clips)
             if score >= o.thr * 0.5:
                 o.last_above = t
             if score > o.peak_s:
                 o.peak_s, o.peak_t = score, t
             too_long = t - o.start >= c.max_clip_seconds
             if t - o.last_above >= 4 or too_long:
-                result = self._close(o)
+                m = self._close(o)
                 self.open = None
+                if m:
+                    result.extend(self._juntar(m))
+
+        # o momento que estava esperando: se passou o tempo de juntar e nada novo começou, sai
+        if self.pendente is not None and self.open is None \
+                and t - c.chat_delay > self.pendente.clip_end + c.merge_gap:
+            result.append(self.pendente)
+            self.pendente = None
 
         # não deixa picos "contaminarem" a linha de base
         if self.open is None:
             self._update_baselines(t)
         return result
+
+    def _juntar(self, m: Moment) -> list[Moment]:
+        """Junta momentos próximos num corte só (história completa em vez de vários pedaços)."""
+        c = self.cfg
+        p = self.pendente
+        if p is not None and m.clip_start - p.clip_end <= c.merge_gap \
+                and m.clip_end - p.clip_start <= c.max_clip_seconds:
+            stats = dict(p.stats)
+            for k, v in m.stats.items():
+                if isinstance(v, (int, float)) and k != "mean_score":
+                    stats[k] = stats.get(k, 0) + v
+            stats["juntados"] = stats.get("juntados", 1) + 1
+            forte = m if m.peak_score >= p.peak_score else p
+            self.pendente = Moment(event_start=p.event_start, event_end=m.event_end,
+                                   peak_time=forte.peak_time, peak_score=forte.peak_score,
+                                   clip_start=p.clip_start, clip_end=m.clip_end,
+                                   category=forte.category, stats=stats)
+            return []
+        saiu = [p] if p is not None else []
+        self.pendente = m
+        return saiu
 
     def _close(self, o: _Open) -> Moment | None:
         c = self.cfg
@@ -294,10 +343,14 @@ class MomentDetector:
             return None
         t = o.totals
         laughs, hype = t["laughs"], t["hype"]
-        if laughs >= max(hype, 1) and laughs >= 0.15 * max(t["msgs"], 1):
+        if t["kick_clips"] >= 3:
+            category = "clipado na kick"
+        elif laughs >= max(hype, 1) and laughs >= 0.15 * max(t["msgs"], 1):
             category = "engraçado"
         elif hype >= 0.15 * max(t["msgs"], 1):
             category = "hype"
+        elif t["kick_clips"] >= 2:
+            category = "clipado na kick"
         elif t["clip_calls"] >= 2:
             category = "pedido do chat"
         else:

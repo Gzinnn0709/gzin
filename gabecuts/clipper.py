@@ -211,11 +211,11 @@ def web_version(src: Path, out: Path, vertical: bool = True) -> Path:
     """Versão para o site (cabe no plano grátis sem ficar borrada).
 
     720x1280, 30 fps (sobra mais qualidade para cada quadro), CRF 23 com preset "medium"
-    (comprime melhor que o veryfast), teto de 2,5 Mbps e áudio 128k: ~4-8 MB por corte de 45 s.
+    (comprime melhor que o veryfast), teto de 2 Mbps e áudio 128k: ~6-15 MB por corte de 1 a 2 min.
     """
     scale = "scale=720:-2:flags=lanczos" if vertical else "scale=-2:720:flags=lanczos"
     _run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", f"{scale},fps=30", "-c:v", "libx264",
-          "-preset", "medium", "-crf", "23", "-maxrate", "2500k", "-bufsize", "5000k",
+          "-preset", "medium", "-crf", "23", "-maxrate", "2000k", "-bufsize", "4000k",
           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)])
     return out
 

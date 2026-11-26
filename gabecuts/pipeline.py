@@ -307,8 +307,47 @@ class LiveRunner:
 
     async def run(self) -> None:
         loops = {"chat": self._chat_loop, "live": self._live_loop, "segmentos": self._segment_loop,
-                 "detecção": self._detect_loop, "cortes": self._clip_worker, "site": self._site_loop}
+                 "detecção": self._detect_loop, "cortes": self._clip_worker, "site": self._site_loop,
+                 "clipes da kick": self._kick_clips_loop}
         await asyncio.gather(*(self._supervisionar(n, f) for n, f in loops.items()))
+
+    async def _kick_clips_loop(self) -> None:
+        """Acompanha os clipes que os espectadores criam na Kick durante a live.
+
+        Muita gente clipando o mesmo momento = momento bom de verdade: vira sinal forte no detector.
+        """
+        if "kick" not in [self.cfg.platform, *self.cfg.chats]:
+            await asyncio.Event().wait()  # não é Kick: fica parado
+        from . import kick
+        vistos: set[str] = set()
+        primeira = True
+        avisou = False
+        while True:
+            if self.live:
+                try:
+                    clips = await asyncio.to_thread(kick.recent_clips, self.cfg.channel_for("kick"))
+                    agora = time.time()
+                    novos = 0
+                    for c in clips:
+                        if c["id"] in vistos:
+                            continue
+                        vistos.add(c["id"])
+                        # na primeira olhada só registra o que já existia (clipes antigos não contam)
+                        if not primeira and agora - c["ts"] < 15 * 60:
+                            self.detector.add_kick_clip(c["ts"])
+                            novos += 1
+                    if novos:
+                        self.stats["kick_clips"] = self.stats.get("kick_clips", 0) + novos
+                        log.info("🎬 %d clipe(s) novo(s) criados pelos espectadores na Kick", novos)
+                    primeira = False
+                except Exception as e:  # noqa: BLE001
+                    if not avisou:
+                        log.warning("Não consegui ler os clipes da Kick (%s). Sigo só com chat e áudio.",
+                                    str(e)[:150])
+                        avisou = True
+            else:
+                primeira = True  # live nova: começa do zero
+            await asyncio.sleep(self.cfg.kick_clips_poll)
 
     async def _supervisionar(self, nome: str, fn) -> None:
         """Se uma parte der erro, só ela reinicia (o resto continua gravando/cortando)."""

@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="gabecuts", description="Cortes automáticos da live do Gabepeixe")
     ap.add_argument("--config", help="arquivo TOML (padrão: gabecuts.toml)")
     ap.add_argument("--channel", help="canal (padrão: gabepeixe)")
-    ap.add_argument("--platform", choices=["twitch", "kick"], help="de onde vem o vídeo (padrão: twitch)")
+    ap.add_argument("--platform", choices=["twitch", "kick"], help="de onde vem o vídeo (padrão: kick)")
     ap.add_argument("--chat-sources", help='chats lidos, ex: "twitch,kick" em multistream')
     ap.add_argument("--data-dir", type=Path)
     ap.add_argument("-v", "--verbose", action="store_true")
