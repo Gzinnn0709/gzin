@@ -82,3 +82,25 @@ def test_render_completo(tmp_path):
     d2 = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                                str(curto)], capture_output=True, text=True).stdout)
     assert 4.7 < d2 < 5.3
+
+
+@FF
+def test_zoom_nao_mexe_no_tempo_do_video(tmp_path):
+    """Regressão: o zoom deixava o vídeo em câmera lenta (fora de sincronia com o áudio)."""
+    src = tmp_path / "in.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=60:d=8",
+                    "-f", "lavfi", "-i", "sine=d=8", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+                    "-shortest", str(src)], check=True)
+    sem = clipper.make_vertical(src, tmp_path / "sem.mp4", None, None, preset="ultrafast")
+    com = clipper.make_vertical(src, tmp_path / "com.mp4", None, None, preset="ultrafast", zoom_at=2.0)
+
+    def quadro(p, t):
+        return subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(p), "-frames:v", "1",
+                               "-vf", "crop=1080:608:0:656,scale=270:-2,format=gray", "-f", "rawvideo", "-"],
+                              capture_output=True, check=True).stdout
+
+    def diferenca(a, b):
+        return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+
+    assert diferenca(quadro(sem, 6.5), quadro(com, 6.5)) < 2      # fora do zoom: mesmo quadro
+    assert diferenca(quadro(sem, 2.5), quadro(com, 2.5)) > 5      # durante: imagem ampliada

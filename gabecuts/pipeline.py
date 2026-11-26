@@ -70,6 +70,25 @@ def manter_acordado(ligar: bool) -> None:
         log.debug("Não consegui mudar a suspensão: %s", e)
 
 
+class AvisosRecentes(logging.Handler):
+    """Guarda os últimos avisos/erros para mostrar na página /cortes do site (diagnóstico à distância)."""
+
+    def __init__(self, n: int = 6):
+        super().__init__(level=logging.WARNING)
+        self.itens: deque = deque(maxlen=n)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage().replace("\n", " ")
+            self.itens.append(f"{time.strftime('%d/%m %H:%M', time.localtime(record.created))} {msg}"[:220])
+        except Exception:  # noqa: BLE001
+            pass
+
+
+AVISOS = AvisosRecentes()
+logging.getLogger("gabecuts").addHandler(AVISOS)
+
+
 def _try(fn, what: str):
     """Roda uma etapa opcional; em caso de erro, registra e devolve None."""
     try:
@@ -319,7 +338,7 @@ class LiveRunner:
                     dados = dict(live=self.live, gravando=bool(self.recorder and self.recorder.running()),
                                  canal=f"{self.cfg.platform}:{self.cfg.channel_for(self.cfg.platform)}",
                                  fila=self.queue.qsize(), mensagens=self.stats["messages"],
-                                 momentos=self.stats["moments"])
+                                 momentos=self.stats["moments"], avisos=list(AVISOS.itens))
                     segundos = await asyncio.to_thread(site.enviar_status, self.cfg, dados)
                     if segundos and self.live:
                         log.info("✂️  'Cortar agora' pedido pela página do site")

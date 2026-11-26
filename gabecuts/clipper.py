@@ -98,9 +98,11 @@ def make_vertical(src: Path, out: Path, subs: Path | None = None, title: str | N
     """
     fg = "[b]scale=1080:608:force_original_aspect_ratio=decrease,pad=1080:608:(ow-iw)/2:(oh-ih)/2"
     if zoom_at is not None:
+        # Zoom sem mexer no tempo do vídeo: uma cópia ampliada (118%) cobre a imagem só durante a
+        # reação. (O filtro zoompan reescreve os tempos dos quadros e deixava o vídeo em câmera lenta.)
         z0, z1 = max(zoom_at - 0.15, 0.0), zoom_at + 1.6
-        fg += (f",zoompan=z='if(between(in_time,{z0:.2f},{z1:.2f}),1.18,1)'"
-               ":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x608:fps=30")
+        fg += (",split=2[fgn][fgz0];[fgz0]scale=1274:718,crop=1080:608[fgz];"
+               f"[fgn][fgz]overlay=0:0:enable='between(t,{z0:.2f},{z1:.2f})'")
     vf = ("[0:v]split=2[a][b];"
           "[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,"
           "eq=brightness=-0.08[bg];"
