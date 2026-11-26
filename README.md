@@ -107,7 +107,21 @@ Use `platform = "kick"` no `gabecuts.toml` ou `--platform kick` na linha de coma
 - **Multistream:** com `chat_sources = "twitch,kick"`, as mensagens das duas plataformas entram no mesmo detector. O mesmo nick em plataformas diferentes conta como duas pessoas. O vídeo vem só de `platform`.
 - **Nomes diferentes:** se o canal tiver nome diferente em cada site, use `twitch_channel` e `kick_channel`.
 
-### Modo VOD (lives antigas)
+### Live passada da Kick (só com o link, sem baixar a live inteira)
+
+Cole o link do vídeo (`kick.com/gabepeixe/videos/...`) em um destes lugares:
+- no botão **📼 Cortar live passada** da página `/cortes` do site, que funciona de qualquer lugar;
+- no botão **📼 Live passada** do painel local;
+- no comando `gabecuts vod <link>`.
+
+O GabeCuts então:
+1. **acha os momentos sem baixar vídeo**, pelos clipes que os espectadores fizeram daquela live e pelo replay do chat (só texto);
+2. **baixa só os 1 a 2 minutos de cada momento**, direto do VOD (no máximo uns 100 MB no disco por vez, apagados logo depois);
+3. corta no mesmo estilo e manda para o site.
+
+Se o Gabe entrar ao vivo no meio, a live passada **pausa** e continua depois.
+
+### Modo VOD (arquivo já baixado)
 
 1. Baixe o vídeo e o chat com o [TwitchDownloader](https://github.com/lay295/TwitchDownloader), por exemplo `TwitchDownloaderCLI videodownload` e `chatdownload` com saída `.json`.
 2. Rode `gabecuts vod video.mp4 --chat chat.json`.

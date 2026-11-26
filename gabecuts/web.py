@@ -15,6 +15,10 @@ class StatusIn(BaseModel):
     status: str
 
 
+class VodIn(BaseModel):
+    url: str
+
+
 class SiteIn(BaseModel):
     url: str = ""
     codigo: str
@@ -66,6 +70,16 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
             raise HTTPException(409, "a live não está sendo gravada agora")
         return {"id": runner.clip_now(max(10.0, min(seconds, 120.0)))}
 
+    @app.post("/api/vod")
+    def pedir_vod(body: VodIn):
+        if not runner:
+            raise HTTPException(400, "só funciona com o 'gabecuts live' rodando")
+        try:
+            runner.pedir_vod(body.url.strip())
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
     @app.get("/api/site")
     def site_status():
         from . import site
@@ -95,7 +109,7 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
         recent = list(runner.detector.recent_scores)[-120:]
         thr = recent[-1][2].get("thr", cfg.threshold) if recent else cfg.threshold
         return {"mode": "ao vivo", "channel": cfg.channel, "live": runner.live,
-                "recording": bool(runner.recorder and runner.recorder.running()),
+                "recording": bool(runner.recorder and runner.recorder.running()), "vod": runner.vod_status,
                 "queue": runner.queue.qsize(), "threshold": thr, **runner.stats,
                 "scores": [[t, s] for t, s, _ in recent]}
 
@@ -137,6 +151,7 @@ dialog::backdrop{background:#000a}dialog input{background:#0e0e10;color:var(--fg
 <option>postado</option><option>rejeitado</option><option>descartado</option><option>processando</option>
 <option>na fila</option><option>erro</option></select>
 <button class="ap" id="now" title="Corta os últimos 45 segundos da live">✂️ Cortar agora</button>
+<button id="vodbtn" title="Corta uma live passada da Kick (cole o link do vídeo)">📼 Live passada</button>
 <button id="sitebtn" title="Enviar os cortes para a aba Cortes do site">🌐 Site</button><span id="sitest" class="pill"></span></header>
 <dialog id="sitedlg"><form method="dialog" id="siteform">
 <h3 style="margin-top:0">🌐 Enviar cortes para o site</h3>
@@ -176,7 +191,7 @@ async function st(id,s){await fetch(`/api/clips/${id}/status`,{method:'POST',hea
 function cp(id){const c=_cs.find(x=>x.id===id);navigator.clipboard.writeText(`${c.title}\\n\\n${c.description}\\n\\n${(c.hashtags||[]).map(h=>'#'+h).join(' ')}`)}
 async function status(){
   try{const s=await (await fetch('/api/status')).json();
-  $('#st').textContent=s.mode==='ao vivo'?(s.live?(s.recording?'🔴 AO VIVO · gravando':'🟠 AO VIVO · gravação reiniciando'):'⚫ offline')+` · ${s.messages} msgs · ${s.moments} momentos · ${s.queue} na fila`:'painel';
+  $('#st').textContent=s.mode==='ao vivo'?(s.live?(s.recording?'🔴 AO VIVO · gravando':'🟠 AO VIVO · gravação reiniciando'):'⚫ offline')+` · ${s.messages} msgs · ${s.moments} momentos · ${s.queue} na fila`+(s.vod?` · 📼 ${s.vod.etapa}`:''):'painel';
   $('#st').className='pill'+(s.live?' live':'');
   const cv=$('#cv'),x=cv.getContext('2d');x.clearRect(0,0,cv.width,cv.height);
   if(s.scores&&s.scores.length){const mx=Math.max(s.threshold*1.5,...s.scores.map(p=>p[1]));const w=cv.width/s.scores.length;
@@ -189,6 +204,9 @@ $('#now').onclick=async()=>{const b=$('#now');b.disabled=true;const r=await fetc
 async function site(){try{const s=await (await fetch('/api/site')).json();window._site=s;
   $('#sitest').textContent=s.conectado?(s.erro?'🌐 erro no envio':'🌐 conectado'+(s.pendentes?` · enviando ${s.pendentes}`:'')):'🌐 site desligado';
   $('#sitest').title=s.erro||s.url;}catch(e){}}
+$('#vodbtn').onclick=async()=>{const u=prompt('Cole o link do vídeo da live passada na Kick (kick.com/gabepeixe/videos/...):');if(!u)return;
+  const r=await fetch('/api/vod',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})});
+  const j=await r.json();alert(r.ok?'📼 Na fila! Os cortes vão aparecendo aqui. Não baixa a live inteira, só os trechos.':'❌ '+(j.detail||'erro'))};
 $('#sitebtn').onclick=()=>{const s=window._site||{};$('#siteurl').value=s.url||'https://www.aamcell.com.br';$('#sitecod').value='';
   $('#sitemsg').textContent=s.conectado?('Já conectado. '+(s.erro?'Último erro: '+s.erro:'')):'';$('#sitedlg').showModal()};
 $('#sitesave').onclick=async()=>{const b=$('#sitesave');b.disabled=true;$('#sitemsg').textContent='Conferindo o código…';

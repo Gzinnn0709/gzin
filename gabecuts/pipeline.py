@@ -285,6 +285,8 @@ class LiveRunner:
         self.live = False
         self.analyzed: set[str] = set()
         self.queue: asyncio.Queue[tuple[int, Moment]] = asyncio.Queue()
+        self.vod_fila: asyncio.Queue[str] = asyncio.Queue()
+        self.vod_status: dict | None = None   # andamento do corte de live passada (vai para o site)
         self.stats = dict(messages=0, moments=0, started_at=time.time())
         # cortes que ficaram pela metade numa execução anterior
         for c in self.db.list(limit=500):
@@ -308,8 +310,33 @@ class LiveRunner:
     async def run(self) -> None:
         loops = {"chat": self._chat_loop, "live": self._live_loop, "segmentos": self._segment_loop,
                  "detecção": self._detect_loop, "cortes": self._clip_worker, "site": self._site_loop,
-                 "clipes da kick": self._kick_clips_loop}
+                 "clipes da kick": self._kick_clips_loop, "lives passadas": self._vod_loop}
         await asyncio.gather(*(self._supervisionar(n, f) for n, f in loops.items()))
+
+    def pedir_vod(self, url: str) -> None:
+        from . import vod
+        vod.parse_vod_url(url)  # valida o link antes de aceitar
+        self.vod_fila.put_nowait(url)
+        log.info("📼 Live passada na fila: %s", url)
+        if self.vod_status is None:
+            self.vod_status = {"url": url, "etapa": "na fila", "progresso": 0.0}
+
+    async def _vod_loop(self) -> None:
+        """Corta lives passadas, uma de cada vez, sem baixar a live inteira."""
+        from . import vod
+        while True:
+            url = await self.vod_fila.get()
+
+            def progresso(etapa: str, frac: float, url=url) -> None:
+                self.vod_status = {"url": url, "etapa": etapa, "progresso": round(frac, 3),
+                                   "fila": self.vod_fila.qsize()}
+            try:
+                ids = await asyncio.to_thread(vod.cortar_vod, self.cfg, url, self.db, progresso,
+                                              lambda: self.live)
+                progresso(f"pronto: {len(ids)} cortes", 1.0)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Live passada falhou (%s): %s", url, str(e)[:200])
+                progresso(f"erro: {str(e)[:150]}", 0.0)
 
     async def _kick_clips_loop(self) -> None:
         """Acompanha os clipes que os espectadores criam na Kick durante a live.
@@ -372,16 +399,24 @@ class LiveRunner:
                 await asyncio.to_thread(self.site.sync)
                 # durante a live: a cada minuto. Fora dela: a cada 30 min, para o Render grátis
                 # poder dormir (o plano grátis tem horas limitadas por mês)
-                if time.time() - ultimo_status >= (60 if self.live else 1800):
+                ocupado = self.live or (self.vod_status and not str(self.vod_status.get("etapa", "")).startswith(("pronto", "erro")))
+                if time.time() - ultimo_status >= (60 if ocupado else 1200):
                     ultimo_status = time.time()
                     dados = dict(live=self.live, gravando=bool(self.recorder and self.recorder.running()),
                                  canal=f"{self.cfg.platform}:{self.cfg.channel_for(self.cfg.platform)}",
                                  fila=self.queue.qsize(), mensagens=self.stats["messages"],
-                                 momentos=self.stats["moments"], avisos=list(AVISOS.itens))
-                    segundos = await asyncio.to_thread(site.enviar_status, self.cfg, dados)
+                                 momentos=self.stats["moments"], avisos=list(AVISOS.itens),
+                                 vod=self.vod_status)
+                    resposta = await asyncio.to_thread(site.enviar_status, self.cfg, dados)
+                    segundos = resposta.get("cortar_agora") or 0
                     if segundos and self.live:
                         log.info("✂️  'Cortar agora' pedido pela página do site")
                         self.clip_now(float(segundos))
+                    for url in resposta.get("vods") or []:
+                        try:
+                            self.pedir_vod(url)
+                        except ValueError as e:
+                            log.warning("Link de live passada inválido: %s", e)
             except Exception as e:  # noqa: BLE001
                 log.warning("Site: %s", str(e)[:200])
             await asyncio.sleep(20)

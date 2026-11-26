@@ -172,19 +172,22 @@ class SiteUploader:
         return enviados
 
 
-def enviar_status(cfg: Config, dados: dict) -> int:
-    """Manda a situação para a página /cortes do site. Devolve os segundos de um 'Cortar agora'
-    pedido pela página (0 se nenhum)."""
+def enviar_status(cfg: Config, dados: dict) -> dict:
+    """Manda a situação para a página /cortes do site.
+
+    Devolve os pedidos feitos pela página: {"cortar_agora": segundos, "vods": [links]}.
+    """
     c = carregar(cfg)
     if not c.get("codigo"):
-        return 0
+        return {}
     r = httpx.post(f"{normalizar_url(c['url'])}/api/cortes/status", json=dados, timeout=60,
                    headers={"Authorization": f"Bearer {c['codigo']}"})
     _checar(r)
     try:
-        return int(r.json().get("cortar_agora") or 0)
-    except (ValueError, TypeError):
-        return 0
+        j = r.json()
+    except ValueError:
+        return {}
+    return {"cortar_agora": int(j.get("cortar_agora") or 0), "vods": list(j.get("vods") or [])}
 
 
 def _checar(r: httpx.Response) -> None:

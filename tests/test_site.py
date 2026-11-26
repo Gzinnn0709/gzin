@@ -115,7 +115,7 @@ def test_id_no_site_e_url():
 def test_status_e_cortar_agora(tmp_path, site_falso):
     url, recebido = site_falso
     cfg = Config(data_dir=tmp_path / "data"); cfg.ensure_dirs()
-    assert site.enviar_status(cfg, {"live": True}) == 0  # sem código: não manda nada
+    assert site.enviar_status(cfg, {"live": True}) == {}  # sem código: não manda nada
     site.salvar(cfg, url, CODIGO)
-    assert site.enviar_status(cfg, {"live": True, "momentos": 2}) == 30
+    assert site.enviar_status(cfg, {"live": True, "momentos": 2}) == {"cortar_agora": 30, "vods": []}
     assert recebido["status"]["momentos"] == 2

@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
     p_live.add_argument("--no-web", action="store_true", help="não sobe o painel web")
 
     p_vod = sub.add_parser("vod", help="processa um vídeo local")
-    p_vod.add_argument("video", type=Path)
+    p_vod.add_argument("video", help="arquivo de vídeo OU link da live passada na Kick (kick.com/.../videos/...)")
     p_vod.add_argument("--chat", type=Path, help="chat exportado (TwitchDownloader JSON, Kick JSON ou JSONL)")
 
     p_vod.add_argument("--vod-start", help="início do vídeo (ISO, ex: 2026-11-25T20:00:00-03:00); "
@@ -88,13 +88,18 @@ def main(argv: list[str] | None = None) -> None:
     if cfg.low_priority and args.cmd in ("live", "vod"):
         lower_priority()
 
-    if args.cmd == "vod":
+    if args.cmd == "vod" and str(args.video).startswith(("http://", "https://", "kick.com")):
+        from .db import ClipDB
+        from .vod import cortar_vod
+        ids = cortar_vod(cfg, args.video, ClipDB(cfg.db_path))
+        print(f"{len(ids)} cortes gerados em {cfg.clips_dir}")
+    elif args.cmd == "vod":
         from .pipeline import process_vod
         start = None
         if args.vod_start:
             from datetime import datetime
             start = datetime.fromisoformat(args.vod_start.replace("Z", "+00:00")).timestamp()
-        ids = process_vod(cfg, args.video, args.chat, start)
+        ids = process_vod(cfg, Path(args.video), args.chat, start)
         print(f"{len(ids)} cortes gerados em {cfg.clips_dir}")
     elif args.cmd == "web":
         import uvicorn
