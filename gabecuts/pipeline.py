@@ -287,8 +287,21 @@ class LiveRunner:
         return self.submit(m)
 
     async def run(self) -> None:
-        await asyncio.gather(self._chat_loop(), self._live_loop(), self._segment_loop(),
-                             self._detect_loop(), self._clip_worker(), self._site_loop())
+        loops = {"chat": self._chat_loop, "live": self._live_loop, "segmentos": self._segment_loop,
+                 "detecção": self._detect_loop, "cortes": self._clip_worker, "site": self._site_loop}
+        await asyncio.gather(*(self._supervisionar(n, f) for n, f in loops.items()))
+
+    async def _supervisionar(self, nome: str, fn) -> None:
+        """Se uma parte der erro, só ela reinicia (o resto continua gravando/cortando)."""
+        while True:
+            try:
+                await fn()
+                log.warning("Parte '%s' terminou sozinha; reiniciando", nome)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                log.exception("Erro na parte '%s'; reiniciando em 10 s", nome)
+            await asyncio.sleep(10)
 
     async def _site_loop(self) -> None:
         """Manda os cortes prontos e a situação para a página /cortes do site (se conectado).

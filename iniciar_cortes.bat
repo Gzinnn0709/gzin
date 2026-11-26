@@ -12,10 +12,14 @@ rem ========================
 
 if not exist ".venv\Scripts\gabecuts.exe" goto :sem_instalacao
 
+rem ja esta rodando? (o vigia ou o proprio programa)
+tasklist /V /FI "IMAGENAME eq cmd.exe" /FI "WINDOWTITLE eq GabeCuts*" | find /I "cmd.exe" >nul
+if not errorlevel 1 goto :ja_rodando
 tasklist /FI "IMAGENAME eq gabecuts.exe" | find /I "gabecuts.exe" >nul
 if not errorlevel 1 goto :ja_rodando
 
-start "GabeCuts" /min /belownormal ".venv\Scripts\gabecuts.exe" --platform %PLATAFORMA% --channel %CANAL% live
+rem o vigia liga o GabeCuts e religa sozinho se ele fechar
+start "GabeCuts" /min /belownormal cmd /c ""%~dp0vigia.bat" %PLATAFORMA% %CANAL%"
 if /I "%~1"=="auto" exit /b 0
 echo.
 echo  GabeCuts ligado em segundo plano - janela minimizada na barra de tarefas.

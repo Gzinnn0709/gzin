@@ -6,6 +6,7 @@ setlocal EnableDelayedExpansion
 (
   cd /d "%~dp0"
   echo Parando o GabeCuts antigo...
+  taskkill /FI "IMAGENAME eq cmd.exe" /FI "WINDOWTITLE eq GabeCuts*" /T /F >nul 2>&1
   taskkill /IM gabecuts.exe /T /F >nul 2>&1
   echo Baixando a versao nova...
   for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "RAMO=%%b"

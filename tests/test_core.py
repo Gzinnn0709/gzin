@@ -140,3 +140,27 @@ def test_read_chat_over_fake_websocket(monkeypatch):
     msgs = asyncio.run(run())
     assert [m.user for m in msgs] == ["Ana", "Bia"]
     assert "JOIN #gabepeixe" in sent and "PONG :tmi.twitch.tv" in sent
+
+
+def test_parte_com_erro_reinicia_sozinha(monkeypatch, tmp_path):
+    import asyncio
+
+    from gabecuts import pipeline
+    runner = pipeline.LiveRunner(Config(data_dir=tmp_path))
+    chamadas = []
+
+    async def falha_uma_vez():
+        chamadas.append(1)
+        if len(chamadas) == 1:
+            raise RuntimeError("ffmpeg sumiu")
+        raise asyncio.CancelledError
+
+    async def rapido(_):
+        return None
+
+    monkeypatch.setattr(pipeline.asyncio, "sleep", rapido)
+    try:
+        asyncio.run(runner._supervisionar("teste", falha_uma_vez))
+    except asyncio.CancelledError:
+        pass
+    assert len(chamadas) == 2  # deu erro, reiniciou, e só parou quando foi cancelado
