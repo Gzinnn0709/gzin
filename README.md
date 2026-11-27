@@ -156,6 +156,13 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 | `thumb.jpg` | miniatura do pico |
 | `info.json` | título, descrição, hashtags, nota, motivo, transcrição e métricas |
 
+## Filtros contra corte sem noção
+
+- **Chat limpo:** bots, comandos (`!sorteio`) e votos de enquete ("1", "2") não contam.
+- **Mais de um sinal:** uma onda de chat sem risada ou hype (raid de "SALVE", "manda 1 no chat") enfraquece em vez de reforçar. Sem pico de áudio nem clipe na Kick, vale bem menos.
+- **Só os melhores:** a cada 10 minutos de live, só os **2 melhores momentos** viram corte (`best_window_minutes`, `best_per_window`). Momento que 3 ou mais espectadores clipam na Kick passa sempre.
+- **Precisa ter fala:** corte com menos de 25 palavras por minuto é descartado, a não ser que tenha sido clipado na Kick (`min_words_per_minute`). Só vale quando a legenda está funcionando.
+
 ## Estilo TikTok
 
 Os cortes verticais seguem o que funciona nos cortes de streamer que viralizam:

@@ -33,7 +33,7 @@ class Config:
 
     # Gravação (buffer circular de segmentos)
     segment_seconds: int = 10
-    buffer_minutes: int = 20
+    buffer_minutes: int = 30        # precisa cobrir a janela de curadoria (~550 MB em 720p)
     live_check_interval: int = 60
 
     # Detecção de momentos
@@ -50,6 +50,9 @@ class Config:
     min_clip_seconds: float = 40.0  # cortes de 40 s a 2 min
     max_clip_seconds: float = 120.0
     merge_gap: float = 25.0         # momentos a menos de 25 s um do outro viram um corte só
+    best_window_minutes: float = 10 # a cada 10 min de live...
+    best_per_window: int = 2        # ...só os 2 melhores momentos viram corte (0 = desliga)
+    min_words_per_minute: int = 25  # corte quase sem fala é descartado (se a legenda estiver ligada)
     warmup_seconds: int = 60        # não corta antes de ter uma base estatística
 
     # Peso de cada sinal

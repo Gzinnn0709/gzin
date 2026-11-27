@@ -22,7 +22,7 @@ from . import kick
 from .chat import ChatMessage
 from .config import Config
 from .db import ClipDB
-from .detector import MomentDetector
+from .detector import MomentDetector, curar
 from .recorder import pick_variant, split_file_to_segments
 
 log = logging.getLogger(__name__)
@@ -205,6 +205,7 @@ def cortar_vod(cfg: Config, url: str, db: ClipDB, progresso: Callable[[str, floa
         det.add_kick_clip(ts)
     momentos = [m for m in det.tick(fim + 60) + det.flush()
                 if m.clip_end > info.inicio and m.clip_start < fim]
+    momentos = curar(momentos, cfg.best_window_minutes, cfg.best_per_window)
     etapa(f"{len(momentos)} momentos encontrados", 0)
     if not momentos:
         return []

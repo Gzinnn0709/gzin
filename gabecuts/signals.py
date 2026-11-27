@@ -69,3 +69,17 @@ def audio_levels(path: Path | str, sample_rate: int = 16000, bucket: float = 1.0
         chunk = db[i:i + per_bucket]
         out.append(float(np.max(chunk)))
     return out
+
+
+# --- Filtro do chat: o que NÃO é reação a um momento ------------------------------------------
+BOTS = {"botrix", "kickbot", "streamelements", "nightbot", "fossabot", "moobot", "sery_bot",
+        "kicklet", "wizebot", "streamlabs", "kickbotfan", "botrixoficial"}
+VOTO_RE = re.compile(r"^\s*(\d{1,2}|[a-e])\s*$", re.IGNORECASE)  # "1", "2", "a"... (votação/enquete)
+
+
+def ignorar_mensagem(user: str, text: str) -> bool:
+    """Bots, comandos (!sorteio) e votos de enquete enchem o chat sem ser reação a nada."""
+    u = (user or "").lower().split(":")[-1]
+    t = (text or "").strip()
+    return (u in BOTS or u.endswith("bot") or t.startswith("!") or bool(VOTO_RE.match(t))
+            or not t)

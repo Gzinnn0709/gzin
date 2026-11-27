@@ -194,3 +194,26 @@ def test_clipes_da_kick_viram_momento_mesmo_com_chat_normal():
     ms = det.tick(400) + det.flush()
     assert len(ms) == 1 and ms[0].category == "clipado na kick"
     assert ms[0].clip_start < 250 < ms[0].clip_end
+
+
+
+def test_bots_comandos_e_votos_nao_contam():
+    from gabecuts.signals import ignorar_mensagem
+    assert ignorar_mensagem("BotRix", "Obrigado pelo sub!")
+    assert ignorar_mensagem("k:fulanobot", "kkkk")
+    assert ignorar_mensagem("ana", "!sorteio")
+    assert ignorar_mensagem("ana", " 2 ")
+    assert not ignorar_mensagem("ana", "KKKKKK")
+
+
+def test_onda_de_salve_e_votacao_nao_vira_corte():
+    det = MomentDetector(_cfg())
+    _feed_normal(det, 0, 300)
+    for t in range(300, 310):                      # raid: todo mundo mandando "SALVE GABE"
+        for i in range(25):
+            det.add_message(ChatMessage(t + i / 25, f"raid{i}_{t}", "SALVE GABE"))
+    for t in range(400, 410):                      # enquete: "1" / "2" no chat
+        for i in range(25):
+            det.add_message(ChatMessage(t + i / 25, f"v{i}_{t}", str(1 + i % 2)))
+    _feed_normal(det, 310, 600, rng=random.Random(9))
+    assert det.tick(600) + det.flush() == []

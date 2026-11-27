@@ -19,7 +19,7 @@ from .chat import ChatMessage
 from .platforms import check_live, read_all_chats
 from .config import Config
 from .db import ClipDB
-from .detector import Moment, MomentDetector
+from .detector import Curador, Moment, MomentDetector, curar
 from .recorder import (Recorder, cleanup_buffer, list_segments, pick_variant, segments_for_range,
                        split_file_to_segments, streamlink_quality)
 from .signals import audio_levels
@@ -162,11 +162,14 @@ class ClipProcessor:
 
         # 2) transcrição (opcional)
         lines: list = []
-        if cfg.whisper_model.lower() not in ("off", "none", "0", ""):
+        transcreveu = False  # só conta "sem fala" se a transcrição rodou de verdade
+        if cfg.whisper_model.lower() not in ("off", "none", "0", "") and transcribe.available():
             tw = time.time()
-            lines = _try(lambda: transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device,
-                                                       cfg.whisper_language, cfg.encode_threads),
-                         "transcrição") or []
+            res = _try(lambda: transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device,
+                                                     cfg.whisper_language, cfg.encode_threads),
+                       "transcrição")
+            transcreveu = res is not None
+            lines = res or []
             if lines:
                 log.info("Corte #%d transcrito em %.0fs", clip_id, time.time() - tw)
         transcript = transcribe.to_text(lines)
@@ -179,6 +182,15 @@ class ClipProcessor:
                                            m.category, peak_offset, m.peak_score), "revisão da IA")
         rv = rv or ai.heuristic_review(duration, m.category, m.stats, m.peak_score)
         status = "pendente"
+        # corte quase sem fala (só barulho de jogo / chat agitado à toa) – a não ser que muita gente
+        # tenha clipado na Kick
+        palavras = sum(len(ln.text.split()) for ln in lines)
+        por_minuto = palavras / max(duration / 60, 0.1)
+        if transcreveu and por_minuto < cfg.min_words_per_minute and m.stats.get("kick_clips", 0) < 2 \
+                and m.category != "manual":
+            status = "descartado"
+            rv.reason = f"quase sem fala ({palavras} palavras em {duration:.0f}s)"
+            log.info("Corte #%d descartado: %s", clip_id, rv.reason)
         # a nota mínima só vale para a IA; sem ela, todo momento detectado vira corte
         if rv.by_ai and (not rv.keep or rv.score < cfg.ai_min_score):
             status = "descartado"
@@ -280,6 +292,7 @@ class LiveRunner:
         self.db = ClipDB(cfg.db_path)
         self.detector = MomentDetector(cfg)
         self.processor = ClipProcessor(cfg, self.db)
+        self.curador = Curador(cfg.best_window_minutes, cfg.best_per_window)
         self.site = site.SiteUploader(cfg, self.db)
         self.recorder: Recorder | None = None
         self.live = False
@@ -464,6 +477,8 @@ class LiveRunner:
             elif not live and self.live:
                 log.info("⚫ Live encerrada")
                 for m in self.detector.flush():
+                    self.curador.adicionar(m)
+                for m in self.curador.flush():
                     self.submit(m)
                 if self.recorder:
                     self.recorder.stop()
@@ -493,9 +508,17 @@ class LiveRunner:
             if self.live:
                 for m in self.detector.tick(time.time()):
                     self.stats["moments"] += 1
-                    log.info("⚡ Momento detectado: %s score %.1f (%.0fs)", m.category, m.peak_score,
-                             m.duration)
-                    self.submit(m)
+                    log.info("⚡ Momento detectado: %s score %.1f (%.0fs) — esperando a curadoria",
+                             m.category, m.peak_score, m.duration)
+                    for ok in self.curador.adicionar(m):
+                        self.submit(ok)
+                antes = self.curador.descartados
+                for ok in self.curador.prontos(time.time() - self.cfg.analysis_lag):
+                    log.info("🏆 Escolhido entre os melhores: %s score %.1f", ok.category, ok.peak_score)
+                    self.submit(ok)
+                if self.curador.descartados > antes:
+                    log.info("Curadoria deixou de fora %d momento(s) mais fraco(s)",
+                             self.curador.descartados - antes)
             await asyncio.sleep(1)
 
     async def _clip_worker(self) -> None:
@@ -582,7 +605,8 @@ def process_vod(cfg: Config, video: Path, chat_file: Path | None = None,
         proc.remember(m)
 
     end = segs[-1].end if segs else base
-    moments = det.tick(end + vcfg.analysis_lag) + det.flush()
+    moments = curar(det.tick(end + vcfg.analysis_lag) + det.flush(), cfg.best_window_minutes,
+                    cfg.best_per_window)
     log.info("%d momentos encontrados", len(moments))
     ids = []
     for m in moments:

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 from .chat import ChatMessage
 from .config import Config
-from .signals import classify_message, normalize_for_spam
+from .signals import classify_message, ignorar_mensagem, normalize_for_spam
 
 
 @dataclass
@@ -114,6 +114,8 @@ class MomentDetector:
 
     # --- entrada de dados ------------------------------------------------
     def add_message(self, msg: ChatMessage) -> None:
+        if ignorar_mensagem(msg.user, msg.text):
+            return
         t = int(msg.ts)
         b = self.buckets[t]
         laugh, hype, clip = classify_message(msg.text)
@@ -185,8 +187,13 @@ class MomentDetector:
         hype_frac = win["hype"] / msgs
 
         chat = max(0.0, z_rate) * (c.w_chat + c.w_laugh * laugh_frac + c.w_hype * hype_frac)
-        # onda de emote/copypasta (todo mundo mandando a mesma coisa) reforça o sinal
-        chat *= 1.0 + 0.5 * min(win["spam_ratio"], 0.8)
+        emocao = laugh_frac + hype_frac
+        # onda de emote/copypasta: reforça se for risada/hype; se não (raid de "SALVE",
+        # "manda 1 no chat"...), é só barulho e enfraquece
+        if emocao >= 0.3:
+            chat *= 1.0 + 0.5 * min(win["spam_ratio"], 0.8)
+        else:
+            chat *= 1.0 - 0.6 * min(win["spam_ratio"], 0.8)
         if win["unique"] < c.min_unique_chatters:
             chat *= 0.2
         clip = c.w_clip_call * min(win["clip_calls"], 4)
@@ -199,6 +206,10 @@ class MomentDetector:
 
         n_kick = self._kick_clips_perto(t)
         kick = c.w_kick_clip * min(n_kick, 4)
+        # chat agitado sem risada/hype, sem pico de áudio e sem ninguém clipando = conversa
+        # normal acelerada, não um momento: vale bem menos
+        if emocao < 0.15 and n_kick == 0 and (win["audio_db"] is None or self.audio.z(win["audio_db"], 2.0) < 1.0):
+            chat *= 0.45
 
         score = chat + clip + audio + kick
         comps = dict(win, z_rate=round(z_rate, 2), z_audio=round(z_audio, 2),
@@ -366,3 +377,62 @@ class MomentDetector:
         keep_from = target - 15 * 60
         for k in [k for k in self.buckets if k < keep_from]:
             del self.buckets[k]
+
+
+class Curador:
+    """Fica só com os melhores momentos de cada período da live.
+
+    Em vez de virar corte tudo que passou do limiar, junta os momentos de cada janela de
+    `janela_min` minutos e solta só os `por_janela` mais fortes. Momento que 3+ espectadores
+    clipararam na Kick passa sempre.
+    """
+
+    def __init__(self, janela_min: float = 10, por_janela: int = 2):
+        self.janela = max(janela_min, 0) * 60
+        self.por_janela = por_janela
+        self.espera: list[Moment] = []
+        self.descartados = 0
+
+    @staticmethod
+    def qualidade(m: Moment) -> float:
+        st = m.stats or {}
+        return (m.peak_score + 3.0 * st.get("kick_clips", 0) + 0.6 * min(st.get("laughs", 0), 40) ** 0.5
+                + 0.4 * min(st.get("hype", 0), 40) ** 0.5 + 0.5 * (st.get("juntados", 1) - 1))
+
+    def adicionar(self, m: Moment) -> list[Moment]:
+        if self.janela <= 0 or self.por_janela <= 0:
+            return [m]
+        self.espera.append(m)
+        return []
+
+    def _escolher(self, grupo: list[Moment]) -> list[Moment]:
+        sempre = [m for m in grupo if (m.stats or {}).get("kick_clips", 0) >= 3]
+        resto = sorted((m for m in grupo if m not in sempre), key=self.qualidade, reverse=True)
+        escolhidos = sempre + resto[:max(self.por_janela - len(sempre), 0)]
+        self.descartados += len(grupo) - len(escolhidos)
+        return sorted(escolhidos, key=lambda m: m.clip_start)
+
+    def prontos(self, agora: float, folga: float = 60) -> list[Moment]:
+        """Solta os escolhidos das janelas que já terminaram."""
+        if not self.espera:
+            return []
+        janelas: dict[int, list[Moment]] = {}
+        for m in self.espera:
+            janelas.setdefault(int(m.peak_time // self.janela), []).append(m)
+        out = []
+        for k, grupo in sorted(janelas.items()):
+            if (k + 1) * self.janela + folga <= agora:
+                out += self._escolher(grupo)
+                self.espera = [m for m in self.espera if m not in grupo]
+        return out
+
+    def flush(self) -> list[Moment]:
+        return self.prontos(float("inf"))
+
+
+def curar(momentos: list[Moment], janela_min: float, por_janela: int) -> list[Moment]:
+    """Versão de uma vez só (lives passadas/arquivos)."""
+    c = Curador(janela_min, por_janela)
+    for m in momentos:
+        c.adicionar(m)
+    return c.flush() if c.janela > 0 and c.por_janela > 0 else momentos
