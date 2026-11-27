@@ -15,6 +15,11 @@ class StatusIn(BaseModel):
     status: str
 
 
+class IaIn(BaseModel):
+    id: str
+    chave: str = ""
+
+
 class VodIn(BaseModel):
     url: str
 
@@ -69,6 +74,25 @@ def create_app(cfg: Config, runner=None) -> FastAPI:
         if not runner.live:
             raise HTTPException(409, "a live não está sendo gravada agora")
         return {"id": runner.clip_now(max(10.0, min(seconds, 120.0)))}
+
+    @app.get("/api/ia")
+    def ia_status():
+        from . import ia_gratis
+        return ia_gratis.revezamento(cfg.data_dir).status()
+
+    @app.post("/api/ia")
+    def ia_salvar(body: IaIn):
+        from . import ia_gratis
+        rev = ia_gratis.revezamento(cfg.data_dir)
+        if not rev.get(body.id):
+            raise HTTPException(400, "IA desconhecida")
+        rev.salvar_chave(body.id, body.chave)
+        if not body.chave.strip():
+            return {"ok": True, "mensagem": "chave removida"}
+        ok, msg = rev.testar(body.id)
+        if not ok:
+            raise HTTPException(400, msg)
+        return {"ok": True, "mensagem": msg}
 
     @app.post("/api/vod")
     def pedir_vod(body: VodIn):
@@ -151,8 +175,16 @@ dialog::backdrop{background:#000a}dialog input{background:#0e0e10;color:var(--fg
 <option>postado</option><option>rejeitado</option><option>descartado</option><option>processando</option>
 <option>na fila</option><option>erro</option></select>
 <button class="ap" id="now" title="Corta os últimos 45 segundos da live">✂️ Cortar agora</button>
+<button id="iabtn" title="IAs grátis que revisam os cortes e fazem a legenda">🤖 IA</button><span id="iast" class="pill"></span>
 <button id="vodbtn" title="Corta uma live passada da Kick (cole o link do vídeo)">📼 Live passada</button>
 <button id="sitebtn" title="Enviar os cortes para a aba Cortes do site">🌐 Site</button><span id="sitest" class="pill"></span></header>
+<dialog id="iadlg"><form method="dialog">
+<h3 style="margin-top:0">🤖 IAs grátis</h3>
+<p class="meta">Cole a chave grátis de quantas quiser: quanto mais, melhor. Elas se revezam: quando uma chega no limite do dia, a próxima assume.
+A do <b>Groq</b> também faz a legenda na nuvem (melhor e não pesa no notebook).</p>
+<div id="ialista"></div>
+<div class="btns" style="margin-top:10px"><button value="cancel">Fechar</button></div>
+</form></dialog>
 <dialog id="sitedlg"><form method="dialog" id="siteform">
 <h3 style="margin-top:0">🌐 Enviar cortes para o site</h3>
 <p class="meta">No site, entre com sua conta de admin → <b>Administração → ✂️ Cortes → 🔗 Conectar GabeCuts</b>. Copie o código e cole aqui.</p>
@@ -204,6 +236,21 @@ $('#now').onclick=async()=>{const b=$('#now');b.disabled=true;const r=await fetc
 async function site(){try{const s=await (await fetch('/api/site')).json();window._site=s;
   $('#sitest').textContent=s.conectado?(s.erro?'🌐 erro no envio':'🌐 conectado'+(s.pendentes?` · enviando ${s.pendentes}`:'')):'🌐 site desligado';
   $('#sitest').title=s.erro||s.url;}catch(e){}}
+async function ia(){try{const l=await (await fetch('/api/ia')).json();const n=l.filter(x=>x.situacao==='ativa').length;
+  $('#iast').textContent=n?`🤖 ${n} IA${n>1?'s':''} ativa${n>1?'s':''}`:'🤖 sem IA';window._ia=l;}catch(e){}}
+function iaLista(){$('#ialista').innerHTML=(window._ia||[]).map(p=>`<div style="border-top:1px solid #333;padding:8px 0">
+  <b>${esc(p.nome)}</b> <span class="meta">· ${esc(p.situacao)}${p.usos?` · ${p.usos} usos`:''}</span><br>
+  <a href="${esc(p.onde_criar)}" target="_blank" style="color:var(--acc);font-size:13px">criar chave grátis ↗</a><br>
+  <input id="k_${p.id}" placeholder="${p.tem_chave?'(chave salva — cole outra para trocar)':'cole a chave aqui'}" style="width:70%" autocomplete="off">
+  <button type="button" class="ap" onclick="iaSalvar('${p.id}')">Salvar</button>
+  ${p.tem_chave?`<button type="button" onclick="iaSalvar('${p.id}',true)">Remover</button>`:''}
+  <div class="meta" id="m_${p.id}"></div></div>`).join('')}
+async function iaSalvar(id,remover){const v=remover?'':$('#k_'+id).value.trim();if(!remover&&!v)return;
+  $('#m_'+id).textContent='Testando a chave…';
+  const r=await fetch('/api/ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,chave:v})});
+  const j=await r.json();await ia();iaLista();$('#m_'+id).textContent=(r.ok?'✅ ':'❌ ')+(j.mensagem||j.detail||'')}
+$('#iabtn').onclick=async()=>{await ia();iaLista();$('#iadlg').showModal()};
+ia();setInterval(ia,30000);
 $('#vodbtn').onclick=async()=>{const u=prompt('Cole o link do vídeo da live passada na Kick (kick.com/gabepeixe/videos/...):');if(!u)return;
   const r=await fetch('/api/vod',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})});
   const j=await r.json();alert(r.ok?'📼 Na fila! Os cortes vão aparecendo aqui. Não baixa a live inteira, só os trechos.':'❌ '+(j.detail||'erro'))};

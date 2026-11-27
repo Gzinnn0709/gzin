@@ -41,9 +41,38 @@ def _has_cuda() -> bool:
         return False
 
 
+def transcribe_groq(path: Path, chave: str, language: str = "pt") -> list[Line]:
+    """Transcrição na nuvem, grátis (Groq Whisper large-v3-turbo): melhor e não pesa no notebook."""
+    import subprocess
+    import tempfile
+
+    from . import ia_gratis
+    with tempfile.TemporaryDirectory() as tmp:
+        audio = Path(tmp) / "audio.mp3"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
+                        "-b:a", "48k", str(audio)], check=True, capture_output=True)
+        segs = ia_gratis.transcrever_groq(chave, audio, language)
+    return [Line(s["start"], s["end"], s["text"], [Word(w["start"], w["end"], w["text"]) for w in s["words"]])
+            for s in segs]
+
+
 def transcribe(path: Path, model_size: str = "auto", device: str = "auto",
-               language: str = "pt", cpu_threads: int = 2) -> list[Line]:
+               language: str = "pt", cpu_threads: int = 2, data_dir: Path | None = None) -> list[Line]:
     global _model
+    if data_dir is not None:  # tenta a transcrição grátis na nuvem antes de usar a CPU
+        from . import ia_gratis
+        chave = ia_gratis.groq_whisper_livre(ia_gratis.revezamento(data_dir))
+        if chave:
+            try:
+                linhas = transcribe_groq(path, chave, language)
+                log.info("Legenda feita pelo Groq (grátis, na nuvem)")
+                return linhas
+            except ia_gratis._Limite as e:
+                ia_gratis.castigar_whisper(e.espera)
+                log.warning("Groq Whisper no limite grátis; usando o Whisper do notebook")
+            except Exception as e:  # noqa: BLE001
+                ia_gratis.castigar_whisper(300)
+                log.warning("Groq Whisper falhou (%s); usando o Whisper do notebook", str(e)[:120])
     if not available():
         return []
     from faster_whisper import WhisperModel

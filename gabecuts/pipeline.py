@@ -163,10 +163,13 @@ class ClipProcessor:
         # 2) transcrição (opcional)
         lines: list = []
         transcreveu = False  # só conta "sem fala" se a transcrição rodou de verdade
-        if cfg.whisper_model.lower() not in ("off", "none", "0", "") and transcribe.available():
+        from . import ia_gratis
+        groq_ok = bool(ia_gratis.groq_whisper_livre(ia_gratis.revezamento(cfg.data_dir)))
+        if cfg.whisper_model.lower() not in ("off", "none", "0", "") and (transcribe.available() or groq_ok):
             tw = time.time()
             res = _try(lambda: transcribe.transcribe(raw, cfg.whisper_model, cfg.whisper_device,
-                                                     cfg.whisper_language, cfg.encode_threads),
+                                                     cfg.whisper_language, cfg.encode_threads,
+                                                     data_dir=cfg.data_dir),
                        "transcrição")
             transcreveu = res is not None
             lines = res or []
@@ -179,7 +182,8 @@ class ClipProcessor:
         rv = None
         if cfg.ai_enabled:
             rv = _try(lambda: ai.ai_review(cfg.ai_model, duration, transcript, chat, m.stats,
-                                           m.category, peak_offset, m.peak_score), "revisão da IA")
+                                           m.category, peak_offset, m.peak_score, data_dir=cfg.data_dir),
+                      "revisão da IA")
         rv = rv or ai.heuristic_review(duration, m.category, m.stats, m.peak_score)
         status = "pendente"
         # corte quase sem fala (só barulho de jogo / chat agitado à toa) – a não ser que muita gente

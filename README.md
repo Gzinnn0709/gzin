@@ -156,6 +156,22 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 | `thumb.jpg` | miniatura do pico |
 | `info.json` | título, descrição, hashtags, nota, motivo, transcrição e métricas |
 
+## IAs grátis (revezando)
+
+No painel local, clique em **🤖 IA** e cole a chave grátis de quantas quiser. Cada uma tem o link **"criar chave grátis"**:
+
+| IA | o que faz |
+|---|---|
+| Google Gemini, Groq, Cerebras, OpenRouter (modelos `:free`), Mistral, GitHub Models, Hugging Face | lê a transcrição e o chat de cada corte, descarta o que não tem graça, ajusta o começo e o fim e escreve título, descrição e hashtags |
+| **Groq** (também) | faz a **legenda na nuvem** com o Whisper large-v3, de graça: melhor e sem pesar no notebook |
+
+Como funciona o revezamento:
+- **Cada corte vai para uma IA diferente** (intercalado), para nenhuma estourar o limite grátis.
+- **Quando uma chega no limite** (erro 429) ou a chave falha, ela fica pausada um tempo e a próxima assume.
+- **Se nenhuma estiver disponível**, entram as regras automáticas. Na legenda, entra o Whisper do notebook.
+
+As chaves ficam em `data/ia.json`, que não vai para o git. Também funcionam por variável de ambiente: `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `GITHUB_MODELS_TOKEN`, `HF_TOKEN`.
+
 ## Filtros contra corte sem noção
 
 - **Chat limpo:** bots, comandos (`!sorteio`) e votos de enquete ("1", "2") não contam.
