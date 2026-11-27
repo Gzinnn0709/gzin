@@ -158,7 +158,9 @@ Cada corte fica numa pasta própria em `data/clips/AAAAMMDD_HHMMSS_categoria/`:
 
 ## IAs grátis (revezando)
 
-No painel local, clique em **🤖 IA** e cole a chave grátis de quantas quiser. Cada uma tem o link **"criar chave grátis"**:
+**Já vem ligada, sem fazer nada:** quando o GabeCuts está conectado ao site, ele usa a IA que o site da loja já tem (OpenRouter), com limite de 40 cortes por dia. Ela fica por último na fila, para poupar a cota do assistente do estoque.
+
+Para ter mais IAs, no painel local clique em **🤖 IA** e cole a chave grátis de quantas quiser. Cada uma tem o link **"criar chave grátis"**:
 
 | IA | o que faz |
 |---|---|

@@ -40,6 +40,12 @@ def servidor():
             return JSONResponse({"error": "response_format unsupported"}, status_code=400)
         return ok("Claro! ```json\n" + json.dumps(RESPOSTA) + "\n```")
 
+    @app.post("/api/cortes/ia")
+    async def ia_site(request: Request):
+        assert request.headers["authorization"] == "Bearer gc_codigo"
+        chamadas.append(("site", "auto", False))
+        return {"sucesso": True, "texto": json.dumps(RESPOSTA)}
+
     @app.post("/audio")
     async def audio(request: Request):
         await request.form()
@@ -128,3 +134,20 @@ def test_extrair_json():
     assert ia_gratis.extrair_json('Aqui está: {"a": {"b": 2}} pronto') == {"a": {"b": 2}}
     with pytest.raises(ValueError):
         ia_gratis.extrair_json("sem json")
+
+
+def test_ia_do_site_entra_sozinha_e_fica_por_ultimo(tmp_path, servidor, monkeypatch):
+    url, chamadas = servidor
+    for v in ("GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY",
+              "GITHUB_MODELS_TOKEN", "HF_TOKEN"):
+        monkeypatch.delenv(v, raising=False)
+    rev = ia_gratis.Revezamento(tmp_path / "ia.json")
+    assert rev.ativos() == []                                  # nada conectado: sem IA
+    (tmp_path / "site.json").write_text(json.dumps({"url": url, "codigo": "gc_codigo"}))
+    d, quem = rev.chat_json("s", "u")                          # conectou ao site: já tem IA
+    assert quem.startswith("Site da loja") and d["score"] == 82
+    st = {p["id"]: p for p in rev.status()}
+    assert st["site"]["automatica"] and st["site"]["situacao"] == "ativa"
+    # com outra IA com chave, o site fica de reserva (por último)
+    rev.get("mistral").chave, rev.get("mistral").base_url = "k", f"{url}/semjson"
+    assert [p.id for p in rev.ordem()] == ["mistral", "site"]

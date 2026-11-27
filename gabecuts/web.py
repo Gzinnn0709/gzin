@@ -238,7 +238,9 @@ async function site(){try{const s=await (await fetch('/api/site')).json();window
   $('#sitest').title=s.erro||s.url;}catch(e){}}
 async function ia(){try{const l=await (await fetch('/api/ia')).json();const n=l.filter(x=>x.situacao==='ativa').length;
   $('#iast').textContent=n?`🤖 ${n} IA${n>1?'s':''} ativa${n>1?'s':''}`:'🤖 sem IA';window._ia=l;}catch(e){}}
-function iaLista(){$('#ialista').innerHTML=(window._ia||[]).map(p=>`<div style="border-top:1px solid #333;padding:8px 0">
+function iaLista(){$('#ialista').innerHTML=(window._ia||[]).map(p=>p.automatica?`<div style="border-top:1px solid #333;padding:8px 0">
+  <b>${esc(p.nome)}</b> <span class="meta">· ${esc(p.situacao)}${p.usos?` · ${p.usos} usos`:''}</span><br>
+  <span class="meta">Automática: usa a IA que o site já tem (até 40 cortes por dia). Não precisa colar nada.</span></div>`:`<div style="border-top:1px solid #333;padding:8px 0">
   <b>${esc(p.nome)}</b> <span class="meta">· ${esc(p.situacao)}${p.usos?` · ${p.usos} usos`:''}</span><br>
   <a href="${esc(p.onde_criar)}" target="_blank" style="color:var(--acc);font-size:13px">criar chave grátis ↗</a><br>
   <input id="k_${p.id}" placeholder="${p.tem_chave?'(chave salva — cole outra para trocar)':'cole a chave aqui'}" style="width:70%" autocomplete="off">

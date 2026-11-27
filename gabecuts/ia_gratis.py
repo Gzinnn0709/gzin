@@ -45,6 +45,9 @@ class Provedor:
 
 # Modelos grátis conhecidos (a lista de cada um pode ser trocada no data/ia.json).
 PROVEDORES_PADRAO = [
+    # IA "emprestada" do site da loja (OpenRouter já configurado lá). Entra sozinha quando o
+    # GabeCuts está conectado ao site; fica por último na fila para poupar a cota do assistente.
+    Provedor("site", "Site da loja (OpenRouter)", "", ["auto"], "", "", json_mode=False),
     Provedor("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai",
              ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"], "GEMINI_API_KEY",
              "https://aistudio.google.com/apikey"),
@@ -91,10 +94,23 @@ class Revezamento:
             except (OSError, ValueError):
                 dados = {}
         for p in self.provedores:
+            if p.id == "site":
+                self._configurar_site(p)
+                continue
             d = dados.get(p.id) or {}
-            p.chave = (d.get("chave") or os.environ.get(p.env, "")).strip()
+            p.chave = (d.get("chave") or (os.environ.get(p.env, "") if p.env else "")).strip()
             if d.get("modelos"):
                 p.modelos = [m for m in d["modelos"] if isinstance(m, str) and m.strip()]
+
+    def _configurar_site(self, p: Provedor) -> None:
+        """Usa o código de conexão do site (data/site.json) como chave."""
+        try:
+            d = json.loads((self.arquivo.parent / "site.json").read_text(encoding="utf-8")) if self.arquivo else {}
+        except (OSError, ValueError):
+            d = {}
+        p.chave = (d.get("codigo") or "").strip()
+        p.base_url = (d.get("url") or "").rstrip("/")
+        p.onde_criar = f"{p.base_url}/cortes" if p.base_url else ""
 
     def salvar_chave(self, pid: str, chave: str) -> None:
         dados = {}
@@ -113,6 +129,8 @@ class Revezamento:
 
     def testar(self, pid: str) -> tuple[bool, str]:
         """Faz um pedido bem pequeno só nesse provedor para conferir a chave."""
+        if pid == "site":
+            return False, "a IA do site é configurada sozinha pela conexão 🌐 Site"
         p = self.get(pid)
         if not p or not p.chave:
             return False, "sem chave"
@@ -141,8 +159,12 @@ class Revezamento:
 
     def status(self) -> list[dict]:
         agora = time.time()
+        site = self.get("site")
+        if site:
+            self._configurar_site(site)
         return [{"id": p.id, "nome": p.nome, "tem_chave": bool(p.chave), "onde_criar": p.onde_criar,
-                 "situacao": ("sem chave" if not p.chave else
+                 "automatica": p.id == "site",
+                 "situacao": (("conecte o 🌐 Site para usar" if p.id == "site" else "sem chave") if not p.chave else
                               f"pausada ({p.motivo}, volta em {int((p.castigo_ate - agora) / 60) + 1} min)"
                               if p.castigo_ate > agora else "ativa"),
                  "usos": p.usos, "falhas": p.falhas} for p in self.provedores]
@@ -157,13 +179,17 @@ class Revezamento:
     def ordem(self) -> list[Provedor]:
         """Provedores disponíveis, começando por um diferente a cada pedido (intercala)."""
         agora = time.time()
-        livres = [p for p in self.provedores if p.chave and p.castigo_ate <= agora]
+        site = self.get("site")
+        if site:
+            self._configurar_site(site)  # pega a conexão nova se o site foi conectado agora
+        livres = [p for p in self.provedores if p.chave and p.castigo_ate <= agora and p.id != "site"]
+        reserva = [p for p in self.provedores if p.id == "site" and p.chave and p.castigo_ate <= agora]
         if not livres:
-            return []
+            return reserva
         with self._lock:
             i = self._vez % len(livres)
             self._vez += 1
-        return livres[i:] + livres[:i]
+        return livres[i:] + livres[:i] + reserva
 
     def chat_json(self, system: str, user: str, max_tokens: int = 1200) -> tuple[dict, str]:
         """Pede uma resposta em JSON. Devolve (dados, "Provedor/modelo")."""
@@ -198,7 +224,22 @@ class Revezamento:
                     self._castigar(p, 3600, "nenhum modelo da lista funcionou")
         raise SemIA(f"todas as IAs grátis falharam agora ({ultimo_erro})")
 
+    def _pedir_site(self, p: Provedor, system: str, user: str) -> str:
+        r = httpx.post(f"{p.base_url}/api/cortes/ia", json={"system": system, "user": user},
+                       headers={"Authorization": f"Bearer {p.chave}"}, timeout=100)
+        if r.status_code == 429:
+            raise _Limite(f"{p.nome}: limite do dia", _retry_after(r) or 3600)
+        if r.status_code in (401, 403):
+            raise _ChaveRuim(f"{p.nome}: código de conexão recusado")
+        if r.status_code == 404:
+            raise _Limite(f"{p.nome}: o site ainda não tem essa função", 6 * 3600)
+        if r.status_code >= 400:
+            raise _Temporario(f"{p.nome}: erro {r.status_code}")
+        return (r.json() or {}).get("texto") or ""
+
     def _pedir(self, p: Provedor, modelo: str, system: str, user: str, max_tokens: int) -> str:
+        if p.id == "site":
+            return self._pedir_site(p, system, user)
         corpo = {"model": modelo, "temperature": 0.4, "max_tokens": max_tokens,
                  "messages": [{"role": "system", "content": system},
                               {"role": "user", "content": user}]}
